@@ -144,6 +144,25 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
 .hist{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px;margin-bottom:16px}
 .hist .d{color:var(--muted);font-variant-numeric:tabular-nums}
 .danger{color:var(--lotus)}
+.week{display:grid;grid-template-columns:22px repeat(7,1fr) 22px;gap:4px;align-items:center;margin-top:18px}
+.wnav{background:none;border:0;font-size:22px;color:var(--muted);cursor:pointer;padding:0}
+.wnav:disabled{opacity:.25}
+.wd{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0 6px;border:0;border-radius:16px;background:none;cursor:pointer}
+.wd small{font-size:12px;color:var(--muted)}
+.wd b{font-size:16px;font-variant-numeric:tabular-nums;width:34px;height:34px;display:grid;place-items:center;border-radius:50%;background:var(--surface)}
+.wd.today b{box-shadow:inset 0 0 0 1.5px var(--lily)}
+.wd.on{background:var(--marker)}
+.wd.on b{background:var(--lily);color:var(--on-accent)}
+.wd:disabled{opacity:.3;cursor:default}
+.wd i{width:5px;height:5px;border-radius:50%}
+.wd i.has{background:var(--lily)}
+.backfill{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding:10px 14px;border-radius:12px;background:color-mix(in srgb,var(--amber) 18%,transparent);font-size:14px}
+.backfill button{flex:none;border:0;background:var(--amber);color:var(--on-accent);border-radius:10px;padding:7px 12px;font-weight:700;cursor:pointer}
+.menuchips{margin-top:22px}
+.donebox{margin-top:30px}
+.donehead{display:flex;justify-content:space-between;align-items:center;width:100%;background:var(--surface);border:0;border-radius:14px;padding:13px 16px;font-size:15px;cursor:pointer;color:var(--muted)}
+.caret{transition:transform .2s;font-size:18px}
+.caret.up{transform:rotate(180deg)}
 .shead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .shead h3{padding-top:6px}
 .sbtns{display:flex;gap:8px;flex:none}
@@ -360,13 +379,17 @@ async function load(quiet) {
 /* ---------- 計算 ---------- */
 const logsOf = id => S.logs.filter(l => l.item === id);
 const lastDate = id => { const l = logsOf(id); return l.length ? l[l.length - 1].date : ''; };
-const doneToday = id => S.logs.some(l => l.item === id && l.date === TODAY);
+let VIEW = TODAY, menuFilter = '全部', doneOpen = false;
+const doneOn = (id, d) => S.logs.some(l => l.item === id && l.date === d);
+const doneToday = id => doneOn(id, VIEW);
+const songsDoneOn = d => new Set(JSON.parse(localStorage.getItem('dailyMenu.songsDone.' + d) || '[]'));
 const isCourse = it => (it.perWeek || 0) > 0;
 const interval = it => Math.max(1, Math.round(7 / it.perWeek));
 const finished = it => it.target != null && it.prog != null && it.prog >= it.target;
 function expectedLesson(it) { // 照進度，今天應該上到第幾堂
-  if (DAY_INDEX < 0) return 0;
-  return Math.min(it.target || Infinity, Math.floor(DAY_INDEX / interval(it)) + 1);
+  const di = daysBetween(CONFIG.START, VIEW);
+  if (di < 0) return 0;
+  return Math.min(it.target || Infinity, Math.floor(di / interval(it)) + 1);
 }
 const courseDue = it => !finished(it) && ((it.prog || 0) < expectedLesson(it) || doneToday(it.id));
 
@@ -407,45 +430,97 @@ function drumSVG(done, total) {
       stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - frac)}" transform="rotate(-90 75 75)"/></svg>`;
 }
 
+function weekStrip() {
+  const dow = (new Date(VIEW + 'T00:00:00').getDay() + 6) % 7, mon = addDays(VIEW, -dow);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(mon, i));
+  return `<div class="week"><button class="wnav" aria-label="上一週" onclick="moveWeek(-7)">‹</button>${days.map((d, i) => {
+    const off = d > TODAY || d < CONFIG.START, any = S.logs.some(l => l.date === d);
+    return `<button class="wd ${d === VIEW ? 'on' : ''} ${d === TODAY ? 'today' : ''}" ${off ? 'disabled' : ''} onclick="setView('${d}')">
+      <small>${'一二三四五六日'[i]}</small><b>${+d.slice(8)}</b><i class="${any ? 'has' : ''}"></i></button>`;
+  }).join('')}<button class="wnav" aria-label="下一週" onclick="moveWeek(7)" ${addDays(mon, 7) > TODAY ? 'disabled' : ''}>›</button></div>`;
+}
+function setView(d) { VIEW = d; doneOpen = false; render(); }
+function moveWeek(n) {
+  let d = addDays(VIEW, n);
+  if (d > TODAY) d = TODAY;
+  if (d < CONFIG.START) d = CONFIG.START;
+  setView(d);
+}
+
 function renderToday() {
+  const isToday = VIEW === TODAY;
+  S.songsDone = songsDoneOn(VIEW);
   const active = S.items.filter(i => i.active);
   const courses = active.filter(isCourse);
   const dueCourses = courses.filter(courseDue);
   const practice = active.filter(i => !isCourse(i));
   const counted = [...dueCourses, ...practice];
-  const todaySongs = S.songs.filter(s => s.status !== '可以上台' || S.songsDone.has(s.id));
-  const total = counted.length + todaySongs.length;
-  const done = counted.filter(i => doneToday(i.id)).length + todaySongs.filter(s => S.songsDone.has(s.id)).length;
+  const songsAll = S.songs.filter(s => s.status !== '可以上台' || S.songsDone.has(s.id));
+  const total = counted.length + songsAll.length;
+  const done = counted.filter(i => doneToday(i.id)).length + songsAll.filter(s => S.songsDone.has(s.id)).length;
 
-  let html = `<div class="head">
+  let html = weekStrip();
+  if (!isToday) html += `<div class="backfill"><span>正在看 ${md(VIEW)} 星期${'日一二三四五六'[new Date(VIEW + 'T00:00:00').getDay()]}，記錄會存到這一天</span><button onclick="setView(TODAY)">回到今天</button></div>`;
+  html += `<div class="head">
     <div class="drum">${drumSVG(done, total)}
       <div class="center"><div><div class="count">${done}/${total}</div><div class="countsub">${total && done === total ? '全部完成' : '已完成'}</div></div></div></div>
     <div class="stats">
       <div class="stat"><b>${monthDays()} 天</b>${new Date(TODAY + 'T00:00:00').getMonth() + 1} 月有練習</div>
-    </div></div>` + punchCard();
-
-  html += `<div class="gigs">${S.gigs.map(g => {
-    const n = daysBetween(TODAY, g.date), all = S.songs.filter(s => s.gig === g.id);
-    const pending = all.filter(s => s.status !== '可以上台').length;
-    return `<button class="gig" onclick="openGig('${g.id}')"><div class="gname">${esc(g.name)}</div>
-      <div class="gnum">${n === 0 ? '今天' : n}${n === 0 ? '' : '<small>天</small>'}</div>
-      <div class="ginfo">${md(g.date)}${g.place ? '，' + esc(g.place) : ''}<br>${!all.length ? '歌單還沒出來' : pending ? pending + ' 首還沒準備好' : '歌曲都準備好了'}</div></button>`;
-  }).join('')}<button class="gig add" onclick="openGig()">＋ 新增演出</button></div>`;
-  if (courses.length) {
-    const sorted = [...courses].sort((a, b) => courseDue(b) - courseDue(a));
-    html += section('網課', `${dueCourses.length} 門今天要上`, sorted.map(courseRow).join(''));
+    </div></div>`;
+  if (isToday) {
+    html += punchCard();
+    html += `<div class="gigs">${S.gigs.map(g => {
+      const n = daysBetween(TODAY, g.date), all = S.songs.filter(s => s.gig === g.id);
+      const pending = all.filter(s => s.status !== '可以上台').length;
+      return `<button class="gig" onclick="openGig('${g.id}')"><div class="gname">${esc(g.name)}</div>
+        <div class="gnum">${n === 0 ? '今天' : n}${n === 0 ? '' : '<small>天</small>'}</div>
+        <div class="ginfo">${md(g.date)}${g.place ? '，' + esc(g.place) : ''}<br>${!all.length ? '歌單還沒出來' : pending ? pending + ' 首還沒準備好' : '歌曲都準備好了'}</div></button>`;
+    }).join('')}<button class="gig add" onclick="openGig()">＋ 新增演出</button></div>`;
   }
-  // 爵士鼓依分類，其他領域依領域
+
+  // 篩選標籤
   const drum = practice.filter(i => i.domain === '爵士鼓');
-  const cats = [...new Set(drum.map(i => i.cat || '其他'))].sort((a, b) => (CAT_ORDER.indexOf(a) + 99) % 99 - (CAT_ORDER.indexOf(b) + 99) % 99);
-  cats.forEach(c => html += section(c, '爵士鼓', drum.filter(i => (i.cat || '其他') === c).map(itemRow).join('')));
   const others = practice.filter(i => i.domain !== '爵士鼓');
-  [...new Set(others.map(i => i.domain || '其他'))].forEach(d => html += section(d, '', others.filter(i => (i.domain || '其他') === d).map(itemRow).join('')));
-  S.gigs.forEach(g => {
-    const list = todaySongs.filter(s => s.gig === g.id);
-    if (list.length) html += section(g.name, `${md(g.date)} 演出歌曲`, list.map(songRow).join(''));
+  const chips = ['全部'];
+  if (courses.length) chips.push('網課');
+  if (drum.length) chips.push('爵士鼓');
+  [...new Set(others.map(i => i.domain || '其他'))].forEach(d => chips.push(d));
+  if (songsAll.length) chips.push('歌曲');
+  if (!chips.includes(menuFilter)) menuFilter = '全部';
+  html += `<div class="chips menuchips">${chips.map(c => `<button class="chip ${menuFilter === c ? 'on' : ''}" onclick="menuFilter='${c}';render()">${c}</button>`).join('')}</div>`;
+  const show = c => menuFilter === '全部' || menuFilter === c;
+
+  const doneRows = [];
+  if (show('網課') && courses.length) {
+    const left = courses.filter(c => !doneToday(c.id)).sort((a, b) => courseDue(b) - courseDue(a));
+    courses.filter(c => doneToday(c.id)).forEach(c => doneRows.push(courseRow(c)));
+    if (left.length) html += section('網課', `${dueCourses.filter(c => !doneToday(c.id)).length} 門${isToday ? '今天' : '這天'}要上`, left.map(courseRow).join(''));
+  }
+  if (show('爵士鼓')) {
+    const cats = [...new Set(drum.map(i => i.cat || '其他'))].sort((a, b) => (CAT_ORDER.indexOf(a) + 99) % 99 - (CAT_ORDER.indexOf(b) + 99) % 99);
+    cats.forEach(c => {
+      const list = drum.filter(i => (i.cat || '其他') === c);
+      list.filter(i => doneToday(i.id)).forEach(i => doneRows.push(itemRow(i)));
+      const left = list.filter(i => !doneToday(i.id));
+      if (left.length) html += section(c, '爵士鼓', left.map(itemRow).join(''));
+    });
+  }
+  [...new Set(others.map(i => i.domain || '其他'))].filter(show).forEach(d => {
+    const list = others.filter(i => (i.domain || '其他') === d);
+    list.filter(i => doneToday(i.id)).forEach(i => doneRows.push(itemRow(i)));
+    const left = list.filter(i => !doneToday(i.id));
+    if (left.length) html += section(d, '', left.map(itemRow).join(''));
+  });
+  if (show('歌曲')) S.gigs.forEach(g => {
+    const list = songsAll.filter(s => s.gig === g.id);
+    list.filter(s => S.songsDone.has(s.id)).forEach(s => doneRows.push(songRow(s)));
+    const left = list.filter(s => !S.songsDone.has(s.id));
+    if (left.length) html += section(g.name, `${md(g.date)} 演出歌曲`, left.map(songRow).join(''));
   });
   if (!total && !courses.length) html += `<p class="empty">還沒有項目，新增一個開始練習。</p>`;
+  if (doneRows.length) html += `<section class="donebox"><button class="donehead" onclick="doneOpen=!doneOpen;render()">
+      <span>${isToday ? '今天' : '這天'}已完成 ${doneRows.length} 項</span><span class="caret ${doneOpen ? 'up' : ''}">⌄</span></button>
+      ${doneOpen ? doneRows.join('') : ''}</section>`;
   html += `<button class="more" onclick="openEdit()">＋ 新增練習項目</button>`;
   main.innerHTML = html;
 }
@@ -457,7 +532,7 @@ function courseRow(it) {
   else if (d) sub = `已上到第 ${prog} 堂，共 ${it.target}`;
   else if (due) {
     const behind = expectedLesson(it) - prog - 1;
-    sub = `今天上第 ${prog + 1} 堂，共 ${it.target}` + (behind > 0 ? `　落後 ${behind} 堂` : '');
+    sub = `${VIEW === TODAY ? '今天' : '這天'}上第 ${prog + 1} 堂，共 ${it.target}` + (behind > 0 ? `　落後 ${behind} 堂` : '');
   } else sub = `已上到第 ${prog} 堂，下一堂 ${md(addDays(CONFIG.START, prog * interval(it)))}`;
   return `<button class="row ${d ? 'done' : ''} ${!due && !d ? 'later' : ''}" style="--c:${colorOf(it)}" onclick="openLog('${it.id}')">
     <span class="tick">${d ? '✓' : ''}</span>
@@ -888,6 +963,7 @@ function openLogEdit(id) {
 
 /* ---------- 版本紀錄 ---------- */
 const VERSIONS = [
+  ['1.8', '10/26', ['首頁加上一週日期列，可以點前幾天補記', '首頁加上分類篩選標籤', '完成的項目移到最下面「今天已完成」，預設收合']],
   ['1.7', '10/26', ['歌曲新增「未抓歌」狀態，新加的歌預設為未抓歌', '編輯項目改成右上角的編輯圖示', '開啟課程、參考影片改成右上角的影片圖示']],
   ['1.6', '10/26', ['成長追蹤新增週、月、年報表', '習慣月曆：整體與每個項目', '完成率、最佳連續、全部完成天數、平均每天', '依領域篩選']],
   ['1.5', '10/26', ['新增「紀錄」分頁：每日練習紀錄、打卡紀錄', '打卡可以補登、修改、刪除', '練習紀錄可以修改、刪除', '設定裡新增版本紀錄']],
@@ -1008,21 +1084,21 @@ async function saveLog(it, drum) {
   const prog = val('fProg'), bpm = drum ? val('fBpm') : null, note = document.getElementById('fNote').value.trim();
   const btn = document.getElementById('btnSave'); btn.disabled = true; btn.textContent = '儲存中…';
   const props = {
-    '名稱': { title: [{ text: { content: `${it.short || it.name} ${TODAY}` } }] },
-    '日期': { date: { start: TODAY } },
+    '名稱': { title: [{ text: { content: `${it.short || it.name} ${VIEW}` } }] },
+    '日期': { date: { start: VIEW } },
     '項目': { relation: [{ id: it.id }] },
   };
   if (prog != null) props['進度'] = { number: prog };
   if (bpm != null) props['BPM'] = { number: bpm };
   if (note) props['備註'] = { rich_text: [{ text: { content: note } }] };
-  if (it.domain === '爵士鼓' && S.session) props['練習時段'] = { relation: [{ id: S.session }] };
+  if (it.domain === '爵士鼓' && S.session && VIEW === TODAY) props['練習時段'] = { relation: [{ id: S.session }] };
   try {
     const pg = await notion('pages', 'POST', { parent: { database_id: CONFIG.DB.logs }, properties: props });
     const upd = {}; let record = false;
     if (bpm != null && (it.bpm == null || bpm > it.bpm)) { upd['目前BPM'] = { number: bpm }; record = it.bpm != null; it.bpm = bpm; }
     if (prog != null && (it.prog == null || prog > it.prog)) { upd['目前進度'] = { number: prog }; it.prog = prog; }
     if (Object.keys(upd).length) await notion(`pages/${it.id}`, 'PATCH', { properties: upd });
-    S.logs.push({ id: nid(pg.id), item: it.id, date: TODAY, bpm, prog, note });
+    S.logs.push({ id: nid(pg.id), item: it.id, date: VIEW, bpm, prog, note });
     closeSheet(); render();
     toast(record ? `新紀錄！${it.short || it.name} ${bpm} BPM` : '已記錄');
   } catch (e) { btn.disabled = false; btn.textContent = '記錄完成'; toast('沒有存到：' + e.message); }
@@ -1038,9 +1114,10 @@ function openSong(id) {
   document.getElementById('btnSong').onclick = async () => {
     const btn = document.getElementById('btnSong'); btn.disabled = true; btn.textContent = '儲存中…';
     try {
-      await notion(`pages/${s.id}`, 'PATCH', { properties: { '狀態': { select: { name: pick } }, '上次練習': { date: { start: TODAY } } } });
-      s.status = pick; s.last = TODAY; S.songsDone.add(s.id);
-      localStorage.setItem('dailyMenu.songsDone.' + TODAY, JSON.stringify([...S.songsDone]));
+      const last = !s.last || VIEW > s.last ? VIEW : s.last;
+      await notion(`pages/${s.id}`, 'PATCH', { properties: { '狀態': { select: { name: pick } }, '上次練習': { date: { start: last } } } });
+      s.status = pick; s.last = last; S.songsDone.add(s.id);
+      localStorage.setItem('dailyMenu.songsDone.' + VIEW, JSON.stringify([...S.songsDone]));
       closeSheet(); render(); toast(pick === '可以上台' ? `${s.name} 可以上台了` : '已記錄');
     } catch (e) { btn.disabled = false; btn.textContent = '記錄完成'; toast('沒有存到：' + e.message); }
   };
