@@ -113,6 +113,28 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
 .toast.show{opacity:1}
 .notice{background:var(--surface);border-radius:16px;padding:18px;margin-top:24px}
 .notice p{margin:0 0 12px}
+
+/* tabs */
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+.tabs div{max-width:560px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr}
+.tab{background:none;border:0;padding:14px 0 12px;font-size:15px;color:var(--muted);cursor:pointer}
+.tab.on{color:var(--ink);font-weight:700;box-shadow:inset 0 3px 0 var(--lily)}
+.row.later{opacity:.55}
+/* tracking */
+.trow{display:grid;grid-template-columns:1fr 96px 64px;gap:12px;align-items:center;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:14px 2px;cursor:pointer}
+.trow:last-child{border-bottom:0}
+.trow .val{text-align:right;font-variant-numeric:tabular-nums}
+.trow .val b{display:block;font-size:17px}
+.trow .val span{font-size:12px;color:var(--muted)}
+.spark{width:96px;height:32px;display:block}
+.chart{width:100%;height:auto;display:block;margin:6px 0 14px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 16px}
+.kpi{background:var(--bg);border-radius:12px;padding:10px 12px}
+.kpi b{display:block;font-size:19px;font-variant-numeric:tabular-nums}
+.kpi span{font-size:12px;color:var(--muted)}
+.hist{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px;margin-bottom:16px}
+.hist .d{color:var(--muted);font-variant-numeric:tabular-nums}
+.danger{color:var(--lotus)}
 </style>
 </head>
 <body>
@@ -129,6 +151,10 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
   </div>
   <main id="main"><p class="empty">讀取中…</p></main>
 </div>
+<nav class="tabs"><div>
+  <button class="tab on" data-v="today">今日菜單</button>
+  <button class="tab" data-v="track">成長追蹤</button>
+</div></nav>
 
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
@@ -138,6 +164,7 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
 const CONFIG = {
   PROXY: 'https://notion-proxy.doristtn.workers.dev/?url=',
   VERSION: '2022-06-28',
+  START: '2026-10-26', // 第一天
   DB: {
     items:    '2efe9ad9c8264368896193e84e671be9', // 成長項目
     logs:     'edd62a8b069c4bdf8b68d428fa95e9cb', // 成長紀錄
@@ -145,29 +172,28 @@ const CONFIG = {
     gigs:     '61f409238f794316b3812d0455b4639f', // 演出
     songs:    '90785fa1ea92484593c37744cb5904d2', // 歌曲
   },
-  TECH_COUNT: 4,   // 每天排幾個技巧項目
-  SONG_COUNT: 3,   // 每天排幾首演出歌曲
-  DEFAULT_MIN: { course: 20, tech: 5, song: 5 },
 };
 const DOMAIN_COLOR = { '爵士鼓':'var(--lily)', '樂理':'var(--water)', '日文':'var(--lotus)', '編曲':'var(--violet)' };
+const CAT_ORDER = ['手法', '句子', '教材', '雙踏', '律動', '過門', '讀譜'];
 const TOKEN_KEY = 'dailyMenu.notionToken';
 
-/* ---------- 日期工具 ---------- */
+/* ---------- 日期 ---------- */
 const iso = d => d.toLocaleDateString('sv-SE');
 const TODAY = iso(new Date());
 const addDays = (s, n) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + n); return iso(d); };
 const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00') - Date.parse(a + 'T00:00:00')) / 86400000);
 const md = s => { const [, m, d] = s.split('-'); return `${+m}/${+d}`; };
+const DAY_INDEX = daysBetween(CONFIG.START, TODAY); // 0 = 第一天
 
 /* ---------- 狀態 ---------- */
 let token = localStorage.getItem(TOKEN_KEY) || findSharedToken();
-const S = { items: [], logs: [], gig: null, songs: [], session: null, plan: null, songsDone: new Set() };
+let view = 'today';
+const S = { items: [], logs: [], gig: null, songs: [], session: null, songsDone: new Set(), loaded: false };
 
 function findSharedToken() {
-  // 同一個 github.io 網域下的其他 app（例如爵士鼓教學系統）存過的 Notion token
   for (let i = 0; i < localStorage.length; i++) {
-    const v = localStorage.getItem(localStorage.key(i)) || '';
-    if (/^(ntn_|secret_)[A-Za-z0-9]{20,}$/.test(v.trim())) return v.trim();
+    const v = (localStorage.getItem(localStorage.key(i)) || '').trim();
+    if (/^(ntn_|secret_)[A-Za-z0-9]{20,}$/.test(v)) return v;
   }
   return '';
 }
@@ -197,27 +223,18 @@ const P = {
   text:  p => (p?.rich_text || []).map(t => t.plain_text).join(''),
   sel:   p => p?.select?.name || '',
   num:   p => (typeof p?.number === 'number' ? p.number : null),
-  date:  p => p?.date?.start || '',
+  chk:   p => !!p?.checkbox,
+  date:  p => (p?.date?.start || '').slice(0, 10),
   rel:   p => (p?.relation || []).map(r => nid(r.id)),
 };
-
-function parseItem(pg) {
-  const p = pg.properties;
-  return {
-    id: nid(pg.id), url: pg.url,
-    name: P.title(p['名稱']), domain: P.sel(p['領域']), cat: P.sel(p['分類']), short: P.text(p['簡稱']),
-    bpm: P.num(p['目前BPM']), prog: P.num(p['目前進度']), target: P.num(p['目標']), unit: P.text(p['單位']),
-    perWeek: P.num(p['每週次數']), minutes: P.num(p['每次時長']),
-  };
-}
-function parseLog(pg) {
-  const p = pg.properties;
-  return { item: P.rel(p['項目'])[0] || '', date: (P.date(p['日期']) || '').slice(0, 10), minutes: P.num(p['花費時間']) || 0 };
-}
-function parseSong(pg) {
-  const p = pg.properties;
-  return { id: nid(pg.id), name: P.title(p['歌名']), status: P.sel(p['狀態']), last: (P.date(p['上次練習']) || '').slice(0, 10), band: P.sel(p['團']) };
-}
+const parseItem = pg => { const p = pg.properties; return {
+  id: nid(pg.id), name: P.title(p['名稱']), domain: P.sel(p['領域']), cat: P.sel(p['分類']), short: P.text(p['簡稱']),
+  bpm: P.num(p['目前BPM']), prog: P.num(p['目前進度']), target: P.num(p['目標']), unit: P.text(p['單位']),
+  perWeek: P.num(p['每週次數']), active: P.chk(p['啟用']) }; };
+const parseLog = pg => { const p = pg.properties; return {
+  id: nid(pg.id), item: P.rel(p['項目'])[0] || '', date: P.date(p['日期']), bpm: P.num(p['BPM']), prog: P.num(p['進度']), note: P.text(p['備註']) }; };
+const parseSong = pg => { const p = pg.properties; return {
+  id: nid(pg.id), name: P.title(p['歌名']), status: P.sel(p['狀態']), last: P.date(p['上次練習']) }; };
 
 /* ---------- 讀取 ---------- */
 async function load() {
@@ -225,8 +242,8 @@ async function load() {
   main.innerHTML = '<p class="empty">讀取中…</p>';
   try {
     const [items, logs, gigs, sessions] = await Promise.all([
-      queryAll(CONFIG.DB.items, { filter: { property: '啟用', checkbox: { equals: true } } }),
-      queryAll(CONFIG.DB.logs, { filter: { property: '日期', date: { on_or_after: addDays(TODAY, -120) } }, sorts: [{ property: '日期', direction: 'descending' }] }),
+      queryAll(CONFIG.DB.items),
+      queryAll(CONFIG.DB.logs, { filter: { property: '日期', date: { on_or_after: CONFIG.START } }, sorts: [{ property: '日期', direction: 'ascending' }] }),
       queryAll(CONFIG.DB.gigs, { filter: { property: '日期', date: { on_or_after: TODAY } }, sorts: [{ property: '日期', direction: 'ascending' }] }),
       queryAll(CONFIG.DB.sessions, { filter: { property: '開始', date: { on_or_after: TODAY } }, sorts: [{ property: '開始', direction: 'descending' }] }),
     ]);
@@ -236,15 +253,14 @@ async function load() {
     S.gig = null; S.songs = [];
     if (gigs[0]) {
       const g = gigs[0].properties;
-      S.gig = { id: nid(gigs[0].id), name: P.title(g['名稱']), date: P.date(g['日期']).slice(0, 10), band: P.sel(g['團']), place: P.text(g['地點']) };
+      S.gig = { name: P.title(g['名稱']), date: P.date(g['日期']), place: P.text(g['地點']) };
       const songs = await queryAll(CONFIG.DB.songs, { filter: { and: [
         { property: '演出', relation: { contains: gigs[0].id } },
-        { property: '狀態', select: { does_not_equal: '可以上台' } },
-      ] } });
+        { property: '狀態', select: { does_not_equal: '可以上台' } } ] } });
       S.songs = songs.map(parseSong);
     }
     S.songsDone = new Set(JSON.parse(localStorage.getItem('dailyMenu.songsDone.' + TODAY) || '[]'));
-    S.plan = getPlan();
+    S.loaded = true;
     render();
   } catch (e) {
     main.innerHTML = `<div class="notice"><p><b>讀不到 Notion 資料</b></p><p>${esc(e.message)}</p>
@@ -253,60 +269,18 @@ async function load() {
   }
 }
 
-/* ---------- 排菜單 ---------- */
-const lastDate = id => (S.logs.find(l => l.item === id) || {}).date || '';
+/* ---------- 計算 ---------- */
+const logsOf = id => S.logs.filter(l => l.item === id);
+const lastDate = id => { const l = logsOf(id); return l.length ? l[l.length - 1].date : ''; };
 const doneToday = id => S.logs.some(l => l.item === id && l.date === TODAY);
 const isCourse = it => (it.perWeek || 0) > 0;
-const finished = it => it.target != null && it.prog != null && it.prog >= it.target;
 const interval = it => Math.max(1, Math.round(7 / it.perWeek));
-
-function getPlan() {
-  const key = 'dailyMenu.plan.' + TODAY;
-  let plan = JSON.parse(localStorage.getItem(key) || 'null');
-  if (!plan) { plan = buildPlan(); localStorage.setItem(key, JSON.stringify(plan)); }
-  // 今天另外記錄過、但不在菜單上的項目也放進來
-  S.logs.filter(l => l.date === TODAY).forEach(l => { if (!plan.items.includes(l.item) && S.items.some(i => i.id === l.item)) plan.items.push(l.item); });
-  return plan;
+const finished = it => it.target != null && it.prog != null && it.prog >= it.target;
+function expectedLesson(it) { // 照進度，今天應該上到第幾堂
+  if (DAY_INDEX < 0) return 0;
+  return Math.min(it.target || Infinity, Math.floor(DAY_INDEX / interval(it)) + 1);
 }
-function savePlan() { localStorage.setItem('dailyMenu.plan.' + TODAY, JSON.stringify(S.plan)); }
-
-function buildPlan() {
-  const items = [];
-  // 1. 網課：依頻率判斷今天該不該上
-  S.items.filter(it => isCourse(it) && !finished(it)).forEach(it => {
-    const last = lastDate(it.id);
-    if (!last || daysBetween(last, TODAY) >= interval(it)) items.push(it.id);
-  });
-  // 2. 技巧：最久沒練的優先，盡量分散不同分類
-  const pool = S.items.filter(it => !isCourse(it) && !finished(it))
-    .map(it => ({ it, last: lastDate(it.id), r: Math.random() }))
-    .sort((a, b) => (a.last || '0000') .localeCompare(b.last || '0000') || a.r - b.r);
-  const picked = [], cats = new Set();
-  for (const p of pool) if (picked.length < CONFIG.TECH_COUNT && !cats.has(p.it.cat)) { picked.push(p.it.id); cats.add(p.it.cat); }
-  for (const p of pool) if (picked.length < CONFIG.TECH_COUNT && !picked.includes(p.it.id)) picked.push(p.it.id);
-  items.push(...picked);
-  // 3. 演出歌曲：最久沒練的優先
-  const songs = [...S.songs].sort((a, b) => (a.last || '0000').localeCompare(b.last || '0000')).slice(0, CONFIG.SONG_COUNT).map(s => s.id);
-  return { items, songs };
-}
-
-/* ---------- 畫面 ---------- */
-const main = document.getElementById('main');
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const minutesOf = it => it.minutes || (isCourse(it) ? CONFIG.DEFAULT_MIN.course : CONFIG.DEFAULT_MIN.tech);
-
-function ageText(id) {
-  const last = lastDate(id);
-  if (!last) return ['還沒練過', false];
-  const n = daysBetween(last, TODAY);
-  return [n === 0 ? '今天' : n === 1 ? '昨天' : `${n} 天前`, n >= 7];
-}
-
-function header() {
-  const d = new Date(TODAY + 'T00:00:00');
-  document.getElementById('date').textContent = `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
-  document.getElementById('weekday').textContent = '星期' + '日一二三四五六'[d.getDay()] + '的菜單';
-}
+const courseDue = it => !finished(it) && ((it.prog || 0) < expectedLesson(it) || doneToday(it.id));
 
 function streak() {
   const days = new Set(S.logs.map(l => l.date));
@@ -314,47 +288,62 @@ function streak() {
   while (days.has(d)) { n++; d = addDays(d, -1); }
   return n;
 }
-function weekMinutes() {
+function weekDays() {
   const dow = (new Date(TODAY + 'T00:00:00').getDay() + 6) % 7;
   const mon = addDays(TODAY, -dow);
-  return S.logs.filter(l => l.date >= mon).reduce((a, l) => a + l.minutes, 0);
+  return new Set(S.logs.filter(l => l.date >= mon).map(l => l.date)).size;
 }
 
+/* ---------- 共用畫面 ---------- */
+const main = document.getElementById('main');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const colorOf = it => DOMAIN_COLOR[it.domain] || 'var(--lily)';
+function ageText(id) {
+  const last = lastDate(id);
+  if (!last) return ['還沒練過', false];
+  const n = daysBetween(last, TODAY);
+  return [n === 0 ? '今天' : n === 1 ? '昨天' : `${n} 天前`, n >= 7];
+}
+function header() {
+  const d = new Date(TODAY + 'T00:00:00');
+  document.getElementById('date').textContent = `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+  document.getElementById('weekday').textContent = '星期' + '日一二三四五六'[d.getDay()] + '，' +
+    (DAY_INDEX >= 0 ? `第 ${DAY_INDEX + 1} 天` : `${md(CONFIG.START)} 開始第 1 天`);
+}
+function section(title, note, rows) { return `<section><h2>${esc(title)}<small>${note || ''}</small></h2>${rows}</section>`; }
+function render() { header(); if (!S.loaded) return; view === 'today' ? renderToday() : renderTrack(); }
+
+/* ---------- 今日菜單 ---------- */
 function drumSVG(done, total) {
   const r = 58, c = 2 * Math.PI * r, frac = total ? done / total : 0;
   const lugs = Array.from({ length: 8 }, (_, i) => {
     const a = (i / 8) * 2 * Math.PI - Math.PI / 2;
     return `<circle cx="${75 + 71 * Math.cos(a)}" cy="${75 + 71 * Math.sin(a)}" r="3.2" fill="var(--muted)" opacity=".7"/>`;
   }).join('');
-  return `<svg viewBox="0 0 150 150" aria-hidden="true">
-    <circle cx="75" cy="75" r="66" fill="var(--surface)"/>
-    ${lugs}
+  return `<svg viewBox="0 0 150 150" aria-hidden="true"><circle cx="75" cy="75" r="66" fill="var(--surface)"/>${lugs}
     <circle cx="75" cy="75" r="${r}" fill="none" stroke="var(--line)" stroke-width="9"/>
     <circle class="arc" cx="75" cy="75" r="${r}" fill="none" stroke="var(--lily)" stroke-width="9" stroke-linecap="round"
-      stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - frac)}" transform="rotate(-90 75 75)"/>
-  </svg>`;
+      stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - frac)}" transform="rotate(-90 75 75)"/></svg>`;
 }
 
-function render() {
-  header();
-  const planItems = S.plan.items.map(id => S.items.find(i => i.id === id)).filter(Boolean);
-  const planSongs = S.plan.songs.map(id => S.songs.find(s => s.id === id)).filter(Boolean);
-  const total = planItems.length + planSongs.length;
-  const done = planItems.filter(i => doneToday(i.id)).length + planSongs.filter(s => S.songsDone.has(s.id)).length;
-  const left = planItems.filter(i => !doneToday(i.id)).reduce((a, i) => a + minutesOf(i), 0)
-             + planSongs.filter(s => !S.songsDone.has(s.id)).length * CONFIG.DEFAULT_MIN.song;
-  const st = streak();
+function renderToday() {
+  const active = S.items.filter(i => i.active);
+  const courses = active.filter(isCourse);
+  const dueCourses = courses.filter(courseDue);
+  const practice = active.filter(i => !isCourse(i));
+  const counted = [...dueCourses, ...practice];
+  const total = counted.length + S.songs.length;
+  const done = counted.filter(i => doneToday(i.id)).length + S.songs.filter(s => S.songsDone.has(s.id)).length;
+  const st = streak(), todayAny = S.logs.some(l => l.date === TODAY);
 
   let html = `<div class="head">
     <div class="drum">${drumSVG(done, total)}
-      <div class="center"><div><div class="count">${done}/${total}</div><div class="countsub">${total && done === total ? '全部完成' : '已完成'}</div></div></div>
-    </div>
+      <div class="center"><div><div class="count">${done}/${total}</div><div class="countsub">${total && done === total ? '全部完成' : '已完成'}</div></div></div></div>
     <div class="stats">
-      <div class="stat"><b>${left ? '約 ' + left + ' 分鐘' : '沒有剩下的了'}</b>今天還要練</div>
-      <div class="stat"><b>${st ? '連續 ' + st + ' 天' : '今天開始'}</b>${st && !S.logs.some(l => l.date === TODAY) ? '今天練一項就能延續' : '每天至少練一項'}</div>
-      <div class="stat"><b>${Math.round(weekMinutes() / 6) / 10} 小時</b>本週累積</div>
-    </div>
-  </div>`;
+      <div class="stat"><b>${total - done ? '還剩 ' + (total - done) + ' 項' : '今天練完了'}</b>今日菜單</div>
+      <div class="stat"><b>${st ? '連續 ' + st + ' 天' : '今天開始'}</b>${st && !todayAny ? '今天練一項就能延續' : '每天至少練一項'}</div>
+      <div class="stat"><b>${weekDays()} 天</b>本週有練習</div>
+    </div></div>`;
 
   if (S.gig) {
     const n = daysBetween(TODAY, S.gig.date);
@@ -362,64 +351,158 @@ function render() {
       <span>${S.songs.length ? S.songs.length + ' 首還沒到可以上台' : '歌曲都準備好了'}${S.gig.place ? '，' + esc(S.gig.place) : ''}</span></div>`;
   }
 
-  const courses = planItems.filter(isCourse);
-  const others = planItems.filter(i => !isCourse(i));
-  if (courses.length) html += section('網課', '依進度排定', courses.map(itemRow).join(''));
-  const domains = [...new Set(others.map(i => i.domain || '其他'))];
-  domains.forEach(d => html += section(d === '爵士鼓' ? '爵士鼓練習' : d, '最久沒練的優先', others.filter(i => (i.domain || '其他') === d).map(itemRow).join('')));
-  if (planSongs.length) html += section('演出歌曲', S.gig ? esc(S.gig.name) : '', planSongs.map(songRow).join(''));
-  if (!total) html += `<p class="empty">今天沒有排到項目。可以從下面加練，或到設定重新排菜單。</p>`;
-  html += `<button class="more" onclick="openAdd()">＋ 加練其他項目</button>`;
+  if (courses.length) {
+    const sorted = [...courses].sort((a, b) => courseDue(b) - courseDue(a));
+    html += section('網課', `${dueCourses.length} 門今天要上`, sorted.map(courseRow).join(''));
+  }
+  // 爵士鼓依分類，其他領域依領域
+  const drum = practice.filter(i => i.domain === '爵士鼓');
+  const cats = [...new Set(drum.map(i => i.cat || '其他'))].sort((a, b) => (CAT_ORDER.indexOf(a) + 99) % 99 - (CAT_ORDER.indexOf(b) + 99) % 99);
+  cats.forEach(c => html += section(c, '爵士鼓', drum.filter(i => (i.cat || '其他') === c).map(itemRow).join('')));
+  const others = practice.filter(i => i.domain !== '爵士鼓');
+  [...new Set(others.map(i => i.domain || '其他'))].forEach(d => html += section(d, '', others.filter(i => (i.domain || '其他') === d).map(itemRow).join('')));
+  if (S.songs.length) html += section('演出歌曲', esc(S.gig?.name), S.songs.map(songRow).join(''));
+  if (!total && !courses.length) html += `<p class="empty">還沒有啟用的項目。到 Notion 的「成長項目」勾選「啟用」就會出現在這裡。</p>`;
   main.innerHTML = html;
 }
 
-function section(title, note, rows) {
-  return `<section><h2>${esc(title)}<small>${note}</small></h2>${rows}</section>`;
+function courseRow(it) {
+  const d = doneToday(it.id), due = courseDue(it), prog = it.prog || 0;
+  let sub;
+  if (finished(it)) sub = `全部 ${it.target} 堂上完了`;
+  else if (d) sub = `已上到第 ${prog} 堂，共 ${it.target}`;
+  else if (due) {
+    const behind = expectedLesson(it) - prog - 1;
+    sub = `今天上第 ${prog + 1} 堂，共 ${it.target}` + (behind > 0 ? `　落後 ${behind} 堂` : '');
+  } else sub = `已上到第 ${prog} 堂，下一堂 ${md(addDays(CONFIG.START, prog * interval(it)))}`;
+  return `<button class="row ${d ? 'done' : ''} ${!due && !d ? 'later' : ''}" style="--c:${colorOf(it)}" onclick="openLog('${it.id}')">
+    <span class="tick">${d ? '✓' : ''}</span>
+    <span class="meta"><span class="name">${esc(it.name)}</span><span class="sub">${sub}</span></span></button>`;
 }
 function itemRow(it) {
   const d = doneToday(it.id), [age, stale] = ageText(it.id);
-  const c = DOMAIN_COLOR[it.domain] || 'var(--lily)';
-  let sub = '';
-  if (isCourse(it)) {
-    const next = (it.prog || 0) + 1;
-    const remain = Math.max(0, (it.target || 0) - (it.prog || 0));
-    sub = d ? `已上到第 ${it.prog} 堂，共 ${it.target}` : `第 ${next} 堂，共 ${it.target}　照進度 ${md(addDays(TODAY, Math.max(0, remain - 1) * interval(it)))} 上完`;
-  } else {
-    const parts = [];
-    if (it.unit && it.prog != null) parts.push(`第 ${it.prog} ${it.unit}`);
-    if (it.bpm != null) parts.push(`最高 ${it.bpm} BPM`);
-    parts.push(`${minutesOf(it)} 分`);
-    sub = parts.join('　');
-  }
-  return `<button class="row ${d ? 'done' : ''}" style="--c:${c}" onclick="openLog('${it.id}')">
+  const parts = [];
+  if (it.unit && it.prog != null) parts.push(`第 ${it.prog} ${it.unit}`);
+  if (it.bpm != null) parts.push(`最高 ${it.bpm} BPM`);
+  return `<button class="row ${d ? 'done' : ''}" style="--c:${colorOf(it)}" onclick="openLog('${it.id}')">
     <span class="tick">${d ? '✓' : ''}</span>
-    <span class="meta"><span class="name">${it.short ? `<span class="short">${esc(it.short)}</span>` : ''}${esc(it.name)}</span><span class="sub">${sub}</span></span>
+    <span class="meta"><span class="name">${it.short ? `<span class="short">${esc(it.short)}</span>` : ''}${esc(it.name)}</span>${parts.length ? `<span class="sub">${parts.join('　')}</span>` : ''}</span>
     <span class="age ${stale && !d ? 'stale' : ''}">${d ? '' : age}</span></button>`;
 }
 function songRow(s) {
   const d = S.songsDone.has(s.id);
+  const n = s.last ? daysBetween(s.last, TODAY) : null;
   return `<button class="row ${d ? 'done' : ''}" style="--c:var(--amber)" onclick="openSong('${s.id}')">
     <span class="tick">${d ? '✓' : ''}</span>
     <span class="meta"><span class="name">${esc(s.name)}</span><span class="sub">${esc(s.status || '還沒練')}</span></span>
-    <span class="age">${d ? '' : s.last ? (daysBetween(s.last, TODAY) === 0 ? '今天' : daysBetween(s.last, TODAY) + ' 天前') : '還沒練過'}</span></button>`;
+    <span class="age">${d ? '' : n == null ? '還沒練過' : n === 0 ? '今天' : n + ' 天前'}</span></button>`;
+}
+
+/* ---------- 成長追蹤 ---------- */
+function series(it) { // 優先用 BPM，沒有就用進度
+  const L = logsOf(it.id);
+  const bpm = L.filter(l => l.bpm != null).map(l => ({ date: l.date, v: l.bpm }));
+  const prog = L.filter(l => l.prog != null).map(l => ({ date: l.date, v: l.prog }));
+  if (bpm.length) return { kind: 'BPM', pts: bpm };
+  return { kind: it.unit || '進度', pts: prog };
+}
+function sparkSVG(pts, color) {
+  if (pts.length < 2) return `<svg class="spark" viewBox="0 0 96 32"><line x1="2" y1="16" x2="94" y2="16" stroke="var(--line)" stroke-width="2" stroke-dasharray="3 4"/></svg>`;
+  const vs = pts.map(p => p.v), lo = Math.min(...vs), hi = Math.max(...vs), span = hi - lo || 1;
+  const xy = pts.map((p, i) => `${2 + (i / (pts.length - 1)) * 92},${28 - ((p.v - lo) / span) * 24}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 96 32"><polyline points="${xy}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+function chartSVG(pts, color, unit) {
+  const W = 320, H = 170, L = 34, R = 10, T = 14, B = 26;
+  if (!pts.length) return `<p class="empty">還沒有紀錄，練完記一筆就會開始畫線。</p>`;
+  const d0 = pts[0].date, dN = pts[pts.length - 1].date, dSpan = Math.max(1, daysBetween(d0, dN));
+  const vs = pts.map(p => p.v); let lo = Math.min(...vs), hi = Math.max(...vs);
+  if (lo === hi) { lo -= 5; hi += 5; } const pad = (hi - lo) * .12; lo -= pad; hi += pad;
+  const x = p => L + (pts.length === 1 ? (W - L - R) / 2 : (daysBetween(d0, p.date) / dSpan) * (W - L - R));
+  const y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const grid = [lo + pad, (lo + hi) / 2, hi - pad].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>
+    <text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${Math.round(v)}</text>`).join('');
+  const line = pts.map(p => `${x(p)},${y(p.v)}`).join(' ');
+  const dots = pts.map(p => `<circle cx="${x(p)}" cy="${y(p.v)}" r="3.5" fill="${color}"/>`).join('');
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(unit)} 變化">${grid}
+    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round"/>${dots}
+    <text x="${L}" y="${H - 6}" font-size="10" fill="var(--muted)">${md(d0)}</text>
+    <text x="${W - R}" y="${H - 6}" font-size="10" fill="var(--muted)" text-anchor="end">${md(dN)}</text></svg>`;
+}
+
+function renderTrack() {
+  const active = S.items.filter(i => i.active), archived = S.items.filter(i => !i.active);
+  const totalDays = new Set(S.logs.map(l => l.date)).size;
+  let html = `<div class="kpis" style="margin-top:24px">
+    <div class="kpi"><b>${Math.max(0, DAY_INDEX + 1)}</b><span>第幾天</span></div>
+    <div class="kpi"><b>${totalDays}</b><span>有練習的天數</span></div>
+    <div class="kpi"><b>${S.logs.length}</b><span>總紀錄筆數</span></div></div>`;
+  const groups = [];
+  const drum = active.filter(i => i.domain === '爵士鼓' && !isCourse(i));
+  [...new Set(drum.map(i => i.cat || '其他'))].sort((a, b) => (CAT_ORDER.indexOf(a) + 99) % 99 - (CAT_ORDER.indexOf(b) + 99) % 99)
+    .forEach(c => groups.push([c, drum.filter(i => (i.cat || '其他') === c)]));
+  const rest = active.filter(i => !(i.domain === '爵士鼓' && !isCourse(i)));
+  if (rest.length) groups.push(['網課與其他', rest]);
+  groups.forEach(([t, list]) => html += section(t, '', list.map(trackRow).join('')));
+  if (archived.length) html += section('已封存', '', archived.map(trackRow).join(''));
+  main.innerHTML = html;
+}
+function trackRow(it) {
+  const s = series(it), n = logsOf(it.id).length;
+  let val = '', unit = '';
+  if (isCourse(it)) { val = `${it.prog || 0}/${it.target}`; unit = '堂'; }
+  else if (s.kind === 'BPM' || it.bpm != null) { val = it.bpm ?? '—'; unit = 'BPM'; }
+  else if (it.prog != null) { val = it.prog; unit = it.unit; }
+  else { val = '—'; }
+  return `<button class="trow" onclick="openDetail('${it.id}')">
+    <span class="meta"><span class="name">${it.short ? `<span class="short" style="--c:${colorOf(it)}">${esc(it.short)}</span>` : ''}${esc(it.name)}</span>
+      <span class="sub">${n ? `練了 ${n} 次，${ageText(it.id)[0]}` : '還沒有紀錄'}</span></span>
+    ${sparkSVG(s.pts, colorOf(it))}
+    <span class="val"><b>${esc(val)}</b><span>${esc(unit)}</span></span></button>`;
+}
+
+function openDetail(id) {
+  const it = S.items.find(i => i.id === id), L = logsOf(id), s = series(it);
+  const first = s.pts[0]?.v, last = s.pts[s.pts.length - 1]?.v;
+  const gain = first != null && last != null ? last - first : null;
+  const days = new Set(L.map(l => l.date)).size;
+  const hist = [...L].reverse().map(l => {
+    const v = [l.prog != null ? `第 ${l.prog} ${esc(it.unit || '')}` : '', l.bpm != null ? `${l.bpm} BPM` : ''].filter(Boolean).join('，') || '有練';
+    return `<span class="d">${md(l.date)}</span><span>${v}${l.note ? `<br><span class="sub">${esc(l.note)}</span>` : ''}</span>`;
+  }).join('');
+  openSheet(`<h3>${esc(it.name)}</h3>
+    <p class="hint">${esc([it.domain, it.cat].filter(Boolean).join('／'))}${it.active ? '' : '，已封存'}</p>
+    ${chartSVG(s.pts, colorOf(it), s.kind)}
+    <div class="kpis">
+      <div class="kpi"><b>${days}</b><span>練習天數</span></div>
+      <div class="kpi"><b>${last ?? '—'}</b><span>最近 ${esc(s.kind)}</span></div>
+      <div class="kpi"><b>${gain == null ? '—' : (gain > 0 ? '+' : '') + gain}</b><span>從第一次到現在</span></div>
+    </div>
+    ${hist ? `<div class="hist">${hist}</div>` : ''}
+    <button class="ghost ${it.active ? 'danger' : ''}" id="btnArchive">${it.active ? '封存這個項目' : '恢復這個項目'}</button>
+    <button class="ghost" onclick="closeSheet()">關閉</button>`);
+  document.getElementById('btnArchive').onclick = async () => {
+    if (it.active && !confirm(`封存「${it.name}」？封存後不會出現在今日菜單，紀錄都會保留。`)) return;
+    try {
+      await notion(`pages/${it.id}`, 'PATCH', { properties: { '啟用': { checkbox: !it.active } } });
+      it.active = !it.active; closeSheet(); render(); toast(it.active ? '已恢復' : '已封存');
+    } catch (e) { toast('沒有存到：' + e.message); }
+  };
 }
 
 /* ---------- 底部面板 ---------- */
 const sheet = document.getElementById('sheet'), scrim = document.getElementById('scrim');
-function openSheet(html) { sheet.innerHTML = html; scrim.classList.add('open'); sheet.classList.add('open'); }
+function openSheet(html) { sheet.innerHTML = html; sheet.scrollTop = 0; scrim.classList.add('open'); sheet.classList.add('open'); }
 function closeSheet() { scrim.classList.remove('open'); sheet.classList.remove('open'); }
 scrim.onclick = closeSheet;
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
-
 function stepper(id, val, step) {
   return `<div class="stepper"><button type="button" onclick="bump('${id}',-${step})">−</button>
-    <input id="${id}" type="number" inputmode="numeric" value="${val ?? ''}">
-    <button type="button" onclick="bump('${id}',${step})">＋</button></div>`;
+    <input id="${id}" type="number" inputmode="numeric" value="${val ?? ''}"><button type="button" onclick="bump('${id}',${step})">＋</button></div>`;
 }
 function bump(id, n) { const el = document.getElementById(id); el.value = (+el.value || 0) + n; }
 
 async function linkFromPage(it) {
-  // 頁面內文第一個連結（例如 Hahow 課程）
   try {
     const r = await notion(`blocks/${it.id}/children?page_size=50`);
     for (const b of r.results) for (const t of (b[b.type]?.rich_text || [])) if (t.href) return t.href;
@@ -429,55 +512,48 @@ async function linkFromPage(it) {
 
 async function openLog(id) {
   const it = S.items.find(i => i.id === id);
-  const course = isCourse(it);
-  const drum = it.domain === '爵士鼓' && !course;
+  const course = isCourse(it), drum = it.domain === '爵士鼓' && !course;
   const progVal = course ? (it.prog || 0) + (doneToday(id) ? 0 : 1) : it.prog;
   openSheet(`<h3>${esc(it.name)}</h3>
-    <p class="hint">${course ? `上完一堂就記下來` : drum ? `填今天能乾淨打到的速度` : `記下今天的進度`}</p>
+    <p class="hint">${course ? '上完一堂就記下來' : drum ? '填今天能乾淨打到的速度' : '記下今天的進度'}</p>
     <div id="lk"></div>
     ${course || it.unit ? `<div class="field"><label>${course ? '上到第幾堂' : `練到第幾${esc(it.unit)}`}</label>${stepper('fProg', progVal, 1)}</div>` : ''}
     ${drum ? `<div class="field"><label>BPM${it.bpm != null ? `（目前最高 ${it.bpm}）` : ''}</label>${stepper('fBpm', it.bpm, 5)}</div>` : ''}
-    <div class="field"><label>花了幾分鐘</label>${stepper('fMin', minutesOf(it), 5)}</div>
     <div class="field"><label>備註</label><textarea id="fNote" rows="2" placeholder="哪裡卡住、下次要注意什麼"></textarea></div>
     <button class="primary" id="btnSave">記錄完成</button>
     <button class="ghost" onclick="closeSheet()">取消</button>`);
   document.getElementById('btnSave').onclick = () => saveLog(it, drum);
-  const href = await linkFromPage(it);
-  const lk = document.getElementById('lk');
+  const href = await linkFromPage(it), lk = document.getElementById('lk');
   if (href && lk) lk.innerHTML = `<a class="link" href="${esc(href)}" target="_blank" rel="noopener">${course ? '開啟課程' : '開啟參考資料'}</a>`;
 }
 
 async function saveLog(it, drum) {
   const val = id => { const el = document.getElementById(id); return el && el.value !== '' ? +el.value : null; };
-  const prog = val('fProg'), bpm = drum ? val('fBpm') : null, min = val('fMin') || 0;
-  const note = document.getElementById('fNote').value.trim();
+  const prog = val('fProg'), bpm = drum ? val('fBpm') : null, note = document.getElementById('fNote').value.trim();
   const btn = document.getElementById('btnSave'); btn.disabled = true; btn.textContent = '儲存中…';
   const props = {
     '名稱': { title: [{ text: { content: `${it.short || it.name} ${TODAY}` } }] },
     '日期': { date: { start: TODAY } },
     '項目': { relation: [{ id: it.id }] },
-    '花費時間': { number: min },
   };
   if (prog != null) props['進度'] = { number: prog };
   if (bpm != null) props['BPM'] = { number: bpm };
   if (note) props['備註'] = { rich_text: [{ text: { content: note } }] };
   if (it.domain === '爵士鼓' && S.session) props['練習時段'] = { relation: [{ id: S.session }] };
   try {
-    await notion('pages', 'POST', { parent: { database_id: CONFIG.DB.logs }, properties: props });
+    const pg = await notion('pages', 'POST', { parent: { database_id: CONFIG.DB.logs }, properties: props });
     const upd = {}; let record = false;
     if (bpm != null && (it.bpm == null || bpm > it.bpm)) { upd['目前BPM'] = { number: bpm }; record = it.bpm != null; it.bpm = bpm; }
     if (prog != null && (it.prog == null || prog > it.prog)) { upd['目前進度'] = { number: prog }; it.prog = prog; }
     if (Object.keys(upd).length) await notion(`pages/${it.id}`, 'PATCH', { properties: upd });
-    S.logs.unshift({ item: it.id, date: TODAY, minutes: min });
-    if (!S.plan.items.includes(it.id)) { S.plan.items.push(it.id); savePlan(); }
+    S.logs.push({ id: nid(pg.id), item: it.id, date: TODAY, bpm, prog, note });
     closeSheet(); render();
     toast(record ? `新紀錄！${it.short || it.name} ${bpm} BPM` : '已記錄');
   } catch (e) { btn.disabled = false; btn.textContent = '記錄完成'; toast('沒有存到：' + e.message); }
 }
 
 function openSong(id) {
-  const s = S.songs.find(x => x.id === id);
-  const opts = ['還沒練', '不穩', '可以上台'];
+  const s = S.songs.find(x => x.id === id), opts = ['還沒練', '不穩', '可以上台'];
   openSheet(`<h3>${esc(s.name)}</h3><p class="hint">練完之後，這首現在的狀態是？</p>
     <div class="choices">${opts.map(o => `<button class="choice ${s.status === o ? 'on' : ''}" data-v="${o}">${o}</button>`).join('')}</div>
     <button class="primary" id="btnSong">記錄完成</button><button class="ghost" onclick="closeSheet()">取消</button>`);
@@ -489,46 +565,29 @@ function openSong(id) {
       await notion(`pages/${s.id}`, 'PATCH', { properties: { '狀態': { select: { name: pick } }, '上次練習': { date: { start: TODAY } } } });
       s.status = pick; s.last = TODAY; S.songsDone.add(s.id);
       localStorage.setItem('dailyMenu.songsDone.' + TODAY, JSON.stringify([...S.songsDone]));
-      if (pick === '可以上台') S.songs = S.songs.filter(x => x.id !== s.id || S.plan.songs.includes(x.id));
       closeSheet(); render(); toast(pick === '可以上台' ? `${s.name} 可以上台了` : '已記錄');
     } catch (e) { btn.disabled = false; btn.textContent = '記錄完成'; toast('沒有存到：' + e.message); }
   };
-}
-
-function openAdd() {
-  const rest = S.items.filter(i => !S.plan.items.includes(i.id) && !finished(i));
-  const groups = [...new Set(rest.map(i => i.domain || '其他'))];
-  openSheet(`<h3>加練其他項目</h3><p class="hint">選一個加進今天的菜單</p>
-    ${rest.length ? groups.map(g => `<div class="group">${esc(g)}</div>` + rest.filter(i => (i.domain || '其他') === g)
-      .map(i => `<button class="pick" data-id="${i.id}"><b>${esc(i.short || i.name)}</b><span>${ageText(i.id)[0]}</span></button>`).join('')).join('')
-      : '<p class="empty">所有項目都已經在菜單上了</p>'}
-    <button class="ghost" onclick="closeSheet()">關閉</button>`);
-  sheet.querySelectorAll('.pick').forEach(b => b.onclick = () => { S.plan.items.push(b.dataset.id); savePlan(); closeSheet(); render(); });
 }
 
 function openSettings() {
   openSheet(`<h3>設定</h3>
     <div class="field"><label>Notion token</label><input id="fTok" type="password" value="${esc(token)}" placeholder="ntn_ 開頭"></div>
     <button class="primary" id="btnTok">儲存並重新讀取</button>
-    <button class="ghost" id="btnReplan">重新排今天的菜單</button>
     <button class="ghost" onclick="closeSheet()">關閉</button>`);
   document.getElementById('btnTok').onclick = () => { token = document.getElementById('fTok').value.trim(); localStorage.setItem(TOKEN_KEY, token); closeSheet(); load(); };
-  document.getElementById('btnReplan').onclick = () => {
-    if (!S.items.length) return;
-    S.plan = buildPlan();
-    S.logs.filter(l => l.date === TODAY).forEach(l => { if (!S.plan.items.includes(l.item)) S.plan.items.push(l.item); });
-    savePlan(); closeSheet(); render(); toast('已重新排菜單');
-  };
 }
-
 function renderSetup() {
   header();
   main.innerHTML = `<div class="notice"><p><b>先連上 Notion</b></p><p>貼上「爵士鼓教學系統」integration 的 token，就會讀取今天的菜單。</p>
     <button class="primary" onclick="openSettings()">輸入 token</button></div>`;
 }
-
 let tt; function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 2400); }
 
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => {
+  view = b.dataset.v; document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === b));
+  window.scrollTo(0, 0); render();
+});
 document.getElementById('btnSettings').onclick = openSettings;
 document.getElementById('btnReload').onclick = load;
 header(); load();
