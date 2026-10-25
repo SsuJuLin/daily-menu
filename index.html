@@ -125,7 +125,7 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
 
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-.tabs div{max-width:560px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr}
+.tabs div{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr)}
 .tab{background:none;border:0;padding:14px 0 12px;font-size:15px;color:var(--muted);cursor:pointer}
 .tab.on{color:var(--ink);font-weight:700;box-shadow:inset 0 3px 0 var(--lily)}
 .row.later{opacity:.55}
@@ -144,6 +144,21 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
 .hist{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px;margin-bottom:16px}
 .hist .d{color:var(--muted);font-variant-numeric:tabular-nums}
 .danger{color:var(--lotus)}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--surface);border-radius:12px;padding:4px;margin-top:22px}
+.seg button{border:0;background:none;padding:9px;border-radius:9px;font-size:15px;color:var(--muted);cursor:pointer}
+.seg button.on{background:var(--bg);color:var(--ink);font-weight:700}
+.day{margin-top:26px}
+.day h3{font-family:"Noto Serif TC",serif;font-size:18px;margin:0 0 4px;display:flex;justify-content:space-between;align-items:baseline}
+.day h3 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size:13px;color:var(--muted)}
+.rec{display:grid;grid-template-columns:1fr auto;gap:2px 12px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:11px 2px;cursor:pointer}
+.rec:last-child{border-bottom:0}
+.rec .r1{font-weight:500}
+.rec .r2{text-align:right;font-variant-numeric:tabular-nums}
+.rec .r3{grid-column:1/-1;font-size:13px;color:var(--muted)}
+.ver{border-left:3px solid var(--marker);padding:2px 0 2px 12px;margin-bottom:16px}
+.ver b{font-size:15px}
+.ver span{font-size:13px;color:var(--muted);margin-left:8px}
+.ver ul{margin:4px 0 0;padding-left:18px;font-size:14px}
 .gig.add{border-style:dashed;background:none;justify-content:center;color:var(--muted);font-size:14px}
 .punch{display:flex;align-items:center;gap:14px;background:var(--surface);border-radius:18px;padding:14px 16px;margin-top:18px}
 .punch .pt{flex:1;min-width:0}
@@ -180,6 +195,7 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
 <nav class="tabs"><div>
   <button class="tab on" data-v="today">今日菜單</button>
   <button class="tab" data-v="track">成長追蹤</button>
+  <button class="tab" data-v="records">紀錄</button>
 </div></nav>
 
 <div class="scrim" id="scrim"></div>
@@ -214,7 +230,7 @@ const DAY_INDEX = daysBetween(CONFIG.START, TODAY); // 0 = 第一天
 /* ---------- 狀態 ---------- */
 let token = localStorage.getItem(TOKEN_KEY) || findSharedToken();
 let view = 'today';
-const S = { items: [], logs: [], gigs: [], songs: [], sessions: [], open: null, session: null, songsDone: new Set(), loaded: false };
+const S = { items: [], logs: [], gigs: [], songs: [], sessions: [], allSessions: [], open: null, session: null, songsDone: new Set(), loaded: false };
 
 function findSharedToken() {
   for (let i = 0; i < localStorage.length; i++) {
@@ -276,6 +292,7 @@ async function load(quiet) {
     ]);
     S.items = items.map(parseItem);
     S.logs = logs.map(parseLog);
+    S.allSessions = sessions;
     S.sessions = sessions.filter(r => r.start.slice(0, 10) === TODAY);
     S.open = S.sessions.find(r => !r.end) || null;
     S.session = S.open ? S.open.id : (S.sessions.length ? S.sessions[S.sessions.length - 1].id : null);
@@ -333,7 +350,7 @@ function header() {
     (DAY_INDEX >= 0 ? `第 ${DAY_INDEX + 1} 天` : `${md(CONFIG.START)} 開始第 1 天`);
 }
 function section(title, note, rows) { return `<section><h2><span class="mark">${esc(title)}</span><small>${note || ''}</small></h2>${rows}</section>`; }
-function render() { header(); if (!S.loaded) return; view === 'today' ? renderToday() : renderTrack(); }
+function render() { header(); if (!S.loaded) return; view === 'today' ? renderToday() : view === 'track' ? renderTrack() : renderRecords(); }
 
 /* ---------- 今日菜單 ---------- */
 function drumSVG(done, total) {
@@ -528,7 +545,7 @@ const hm = t => new Date(t).toTimeString().slice(0, 5);
 const fmtMin = m => m >= 60 ? `${Math.floor(m / 60)} 小時 ${Math.round(m % 60)} 分` : `${Math.round(m)} 分鐘`;
 // iPhone 捷徑只會寫入「到達」「離開」兩種紀錄，這裡把它們配對成一次練習
 async function syncSessions() {
-  const recs = (await queryAll(CONFIG.DB.sessions, { filter: { property: '開始', date: { on_or_after: addDays(TODAY, -7) } }, sorts: [{ property: '開始', direction: 'ascending' }] }))
+  const recs = (await queryAll(CONFIG.DB.sessions, { filter: { property: '開始', date: { on_or_after: addDays(CONFIG.START, -1) } }, sorts: [{ property: '開始', direction: 'ascending' }] }))
     .map(pg => ({ id: nid(pg.id), name: P.title(pg.properties['名稱']), start: pg.properties['開始']?.date?.start || '', end: pg.properties['結束']?.date?.start || '', src: P.sel(pg.properties['來源']) }));
   const drop = new Set();
   for (const lv of recs.filter(r => r.name === '離開')) {
@@ -629,6 +646,122 @@ async function removeSong(songId, gigId) {
     else await notion(`pages/${songId}`, 'PATCH', { archived: true });
     await load(true); openGig(gigId);
   } catch (e) { toast('沒有移除：' + e.message); }
+}
+
+
+/* ---------- 紀錄 ---------- */
+let recTab = 'daily';
+const WD = s => '日一二三四五六'[new Date(s + 'T00:00:00').getDay()];
+const sessMin = r => r.end ? (Date.parse(r.end) - Date.parse(r.start)) / 60000 : 0;
+function renderRecords() {
+  let html = `<div class="seg"><button class="${recTab === 'daily' ? 'on' : ''}" onclick="recTab='daily';render()">每日練習</button>
+    <button class="${recTab === 'punch' ? 'on' : ''}" onclick="recTab='punch';render()">打卡紀錄</button></div>`;
+  html += recTab === 'daily' ? dailyHTML() : punchHTML();
+  main.innerHTML = html;
+}
+function dailyHTML() {
+  const dates = [...new Set([...S.logs.map(l => l.date), ...S.allSessions.map(r => r.start.slice(0, 10))])].filter(d => d >= CONFIG.START).sort().reverse();
+  if (!dates.length) return `<p class="empty" style="margin-top:20px">還沒有紀錄。在今日菜單點項目記下 BPM 或進度，就會出現在這裡。</p>`;
+  return dates.map(d => {
+    const logs = S.logs.filter(l => l.date === d);
+    const mins = S.allSessions.filter(r => r.start.slice(0, 10) === d).reduce((a, r) => a + sessMin(r), 0);
+    const rows = logs.map(l => {
+      const it = S.items.find(i => i.id === l.item) || { name: '（已刪除的項目）' };
+      const v = [l.prog != null ? `第 ${l.prog} ${esc(it.unit || '')}` : '', l.bpm != null ? `${l.bpm} BPM` : ''].filter(Boolean).join('，');
+      return `<button class="rec" onclick="openLogEdit('${l.id}')"><span class="r1">${it.short ? `<span class="short" style="--c:${colorOf(it)}">${esc(it.short)}</span>` : ''}${esc(it.name)}</span>
+        <span class="r2">${v || '有練'}</span>${l.note ? `<span class="r3">${esc(l.note)}</span>` : ''}</button>`;
+    }).join('');
+    return `<div class="day"><h3>${md(d)} 星期${WD(d)}<small>${logs.length} 項${mins ? `，鼓房 ${fmtMin(mins)}` : ''}</small></h3>${rows || '<p class="empty">只有打卡，沒有記錄項目</p>'}</div>`;
+  }).join('');
+}
+function punchHTML() {
+  const recs = S.allSessions.filter(r => r.start.slice(0, 10) >= CONFIG.START);
+  const m = TODAY.slice(0, 7), monthMin = recs.filter(r => r.start.startsWith(m)).reduce((a, r) => a + sessMin(r), 0);
+  let html = `<div class="kpis" style="margin-top:18px">
+    <div class="kpi"><b>${new Set(recs.filter(r => r.start.startsWith(m)).map(r => r.start.slice(0, 10))).size}</b><span>本月去鼓房天數</span></div>
+    <div class="kpi"><b>${Math.round(monthMin / 6) / 10}</b><span>本月練習小時</span></div>
+    <div class="kpi"><b>${recs.length}</b><span>總打卡次數</span></div></div>
+    <button class="more" style="margin-top:4px" onclick="openSession()">＋ 補登打卡</button>`;
+  const dates = [...new Set(recs.map(r => r.start.slice(0, 10)))].sort().reverse();
+  html += dates.map(d => {
+    const list = recs.filter(r => r.start.slice(0, 10) === d);
+    const tot = list.reduce((a, r) => a + sessMin(r), 0);
+    return `<div class="day"><h3>${md(d)} 星期${WD(d)}<small>${tot ? fmtMin(tot) : ''}</small></h3>${list.map(r => `
+      <button class="rec" onclick="openSession('${r.id}')"><span class="r1">${hm(r.start)} – ${r.end ? hm(r.end) : '練習中'}</span>
+      <span class="r2">${r.end ? fmtMin(sessMin(r)) : ''}</span><span class="r3">${r.src === '自動' ? '自動打卡' : '手動打卡'}</span></button>`).join('')}</div>`;
+  }).join('') || '<p class="empty">還沒有打卡紀錄</p>';
+  return html;
+}
+const toLocalInput = t => t ? `${iso(new Date(t))}T${new Date(t).toTimeString().slice(0, 5)}` : '';
+function isoFromInput(v) {
+  const d = new Date(v), off = -d.getTimezoneOffset(), pad = n => String(Math.floor(Math.abs(n))).padStart(2, '0');
+  return `${iso(d)}T${d.toTimeString().slice(0, 8)}${off >= 0 ? '+' : '-'}${pad(off / 60)}:${pad(off % 60)}`;
+}
+function openSession(id) {
+  const r = id ? S.allSessions.find(x => x.id === id) : { start: '', end: '' };
+  openSheet(`<h3>${id ? '修改打卡' : '補登打卡'}</h3><p class="hint">${id ? (r.src === '自動' ? '自動打卡' : '手動打卡') + '，時間不對可以在這裡改' : '忘記打卡時可以補登'}</p>
+    <div class="field"><label>開始</label><input id="pS" type="datetime-local" value="${toLocalInput(r.start)}"></div>
+    <div class="field"><label>結束</label><input id="pE" type="datetime-local" value="${toLocalInput(r.end)}"></div>
+    <button class="primary" id="btnSess">${id ? '儲存' : '補登'}</button>
+    ${id ? '<button class="ghost danger" id="btnSessDel">刪除這筆打卡</button>' : ''}
+    <button class="ghost" onclick="closeSheet()">取消</button>`);
+  document.getElementById('btnSess').onclick = async () => {
+    const sv = document.getElementById('pS').value, ev = document.getElementById('pE').value;
+    if (!sv) return toast('請填開始時間');
+    if (ev && Date.parse(ev) <= Date.parse(sv)) return toast('結束要在開始之後');
+    const props = { '開始': { date: { start: isoFromInput(sv) } }, '結束': { date: ev ? { start: isoFromInput(ev) } : null },
+      '名稱': { title: [{ text: { content: '鼓房練習' } }] } };
+    try {
+      if (id) await notion(`pages/${id}`, 'PATCH', { properties: props });
+      else { props['來源'] = { select: { name: '手動' } }; await notion('pages', 'POST', { parent: { database_id: CONFIG.DB.sessions }, properties: props }); }
+      closeSheet(); toast('已儲存'); load(true);
+    } catch (e) { toast('沒有存到：' + e.message); }
+  };
+  if (id) document.getElementById('btnSessDel').onclick = async () => {
+    if (!confirm('刪除這筆打卡？')) return;
+    try { await notion(`pages/${id}`, 'PATCH', { archived: true }); closeSheet(); toast('已刪除'); load(true); } catch (e) { toast('沒有刪除：' + e.message); }
+  };
+}
+function openLogEdit(id) {
+  const l = S.logs.find(x => x.id === id), it = S.items.find(i => i.id === l.item) || { name: '紀錄' };
+  openSheet(`<h3>${esc(it.name)}</h3><p class="hint">${md(l.date)} 星期${WD(l.date)} 的紀錄</p>
+    <div class="two">
+      <div class="field"><label>進度</label><input id="lP" type="number" inputmode="numeric" value="${l.prog ?? ''}"></div>
+      <div class="field"><label>BPM</label><input id="lB" type="number" inputmode="numeric" value="${l.bpm ?? ''}"></div>
+    </div>
+    <div class="field"><label>備註</label><textarea id="lN" rows="2">${esc(l.note || '')}</textarea></div>
+    <button class="primary" id="btnLE">儲存</button>
+    <button class="ghost danger" id="btnLD">刪除這筆紀錄</button>
+    <button class="ghost" onclick="closeSheet()">取消</button>`);
+  const val = fid => { const v = document.getElementById(fid).value; return v === '' ? null : +v; };
+  document.getElementById('btnLE').onclick = async () => {
+    const note = document.getElementById('lN').value.trim();
+    try {
+      await notion(`pages/${id}`, 'PATCH', { properties: { '進度': { number: val('lP') }, 'BPM': { number: val('lB') },
+        '備註': { rich_text: note ? [{ text: { content: note } }] : [] } } });
+      closeSheet(); toast('已儲存'); load(true);
+    } catch (e) { toast('沒有存到：' + e.message); }
+  };
+  document.getElementById('btnLD').onclick = async () => {
+    if (!confirm('刪除這筆紀錄？')) return;
+    try { await notion(`pages/${id}`, 'PATCH', { archived: true }); closeSheet(); toast('已刪除'); load(true); } catch (e) { toast('沒有刪除：' + e.message); }
+  };
+}
+
+/* ---------- 版本紀錄 ---------- */
+const VERSIONS = [
+  ['1.5', '10/26', ['新增「紀錄」分頁：每日練習紀錄、打卡紀錄', '打卡可以補登、修改、刪除', '練習紀錄可以修改、刪除', '設定裡新增版本紀錄']],
+  ['1.4', '10/26', ['首頁打卡卡片，支援 iPhone 捷徑自動打卡', '新增、編輯演出，直接管理歌單', '回到 app 自動更新，拿掉重新整理按鈕', '倒數方框縮小', '加入主畫面後像 app 一樣全螢幕使用']],
+  ['1.3', '10/26', ['演出倒數改成方框', '可以新增、編輯、刪除練習項目', '大標題加上深綠色底線', '修正左上角多出的圖示文字']],
+  ['1.2', '10/25', ['鼓棒圖示', '改成顯示本月練習天數', '同時顯示多場演出與歌單']],
+  ['1.1', '10/25', ['每天列出所有項目，由自己決定要練什麼', '新增成長追蹤分頁與封存', '10/26 為第 1 天，網課照進度計算']],
+  ['1.0', '10/25', ['第一版：今日菜單、網課進度、記錄 BPM']],
+];
+const APP_VERSION = VERSIONS[0][0];
+function openVersions() {
+  openSheet(`<h3>版本紀錄</h3><p class="hint">目前是 v${APP_VERSION}</p>
+    ${VERSIONS.map(([v, d, list]) => `<div class="ver"><b>v${v}</b><span>${d}</span><ul>${list.map(x => `<li>${x}</li>`).join('')}</ul></div>`).join('')}
+    <button class="ghost" onclick="closeSheet()">關閉</button>`);
 }
 
 /* ---------- 新增／編輯／刪除項目 ---------- */
@@ -776,6 +909,7 @@ function openSettings() {
   openSheet(`<h3>設定</h3>
     <div class="field"><label>Notion token</label><input id="fTok" type="password" value="${esc(token)}" placeholder="ntn_ 開頭"></div>
     <button class="primary" id="btnTok">儲存並重新讀取</button>
+    <button class="ghost" onclick="openVersions()">版本紀錄（v${APP_VERSION}）</button>
     <button class="ghost" onclick="closeSheet()">關閉</button>`);
   document.getElementById('btnTok').onclick = () => { token = document.getElementById('fTok').value.trim(); localStorage.setItem(TOKEN_KEY, token); closeSheet(); load(); };
 }
