@@ -144,6 +144,11 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
 .hist{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px;margin-bottom:16px}
 .hist .d{color:var(--muted);font-variant-numeric:tabular-nums}
 .danger{color:var(--lotus)}
+.shead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.shead h3{padding-top:6px}
+.sbtns{display:flex;gap:8px;flex:none}
+#lk:empty{display:none}
+a.iconbtn{text-decoration:none}
 .seg.three{grid-template-columns:repeat(3,1fr)}
 .chips{display:flex;gap:8px;overflow-x:auto;margin:14px 0 4px;padding-bottom:2px}
 .chip{flex:none;border:1.5px solid var(--line);background:none;border-radius:999px;padding:6px 14px;font-size:14px;cursor:pointer;color:var(--muted)}
@@ -473,7 +478,7 @@ function songRow(s) {
   const n = s.last ? daysBetween(s.last, TODAY) : null;
   return `<button class="row ${d ? 'done' : ''}" style="--c:var(--amber)" onclick="openSong('${s.id}')">
     <span class="tick">${d ? '✓' : ''}</span>
-    <span class="meta"><span class="name">${esc(s.name)}</span><span class="sub">${esc(s.status || '還沒練')}</span></span>
+    <span class="meta"><span class="name">${esc(s.name)}</span><span class="sub">${esc(s.status || '未抓歌')}</span></span>
     <span class="age">${d ? '' : n == null ? '還沒練過' : n === 0 ? '今天' : n + ' 天前'}</span></button>`;
 }
 
@@ -647,7 +652,7 @@ function openDetail(id) {
     const v = [l.prog != null ? `第 ${l.prog} ${esc(it.unit || '')}` : '', l.bpm != null ? `${l.bpm} BPM` : ''].filter(Boolean).join('，') || '有練';
     return `<span class="d">${md(l.date)}</span><span>${v}${l.note ? `<br><span class="sub">${esc(l.note)}</span>` : ''}</span>`;
   }).join('');
-  openSheet(`<h3>${esc(it.name)}</h3>
+  openSheet(`${sheetHead(it.name, it.id)}
     <p class="hint">${esc([it.domain, it.cat].filter(Boolean).join('／'))}${it.active ? '' : '，已封存'}</p>
     ${chartSVG(s.pts, colorOf(it), s.kind)}
     <div class="kpis">
@@ -656,7 +661,6 @@ function openDetail(id) {
       <div class="kpi"><b>${gain == null ? '—' : (gain > 0 ? '+' : '') + gain}</b><span>從第一次到現在</span></div>
     </div>
     ${hist ? `<div class="hist">${hist}</div>` : ''}
-    <button class="ghost" onclick="openEdit('${it.id}')">編輯項目</button>
     <button class="ghost ${it.active ? 'danger' : ''}" id="btnArchive">${it.active ? '封存這個項目' : '恢復這個項目'}</button>
     <button class="ghost" onclick="closeSheet()">關閉</button>`);
   document.getElementById('btnArchive').onclick = async () => {
@@ -737,7 +741,7 @@ function openGig(id) {
     </div>
     <div class="field"><label>地點</label><input id="gPlace" value="${esc(g.place || '')}" placeholder="可不填"></div>
     ${id ? `<div class="field"><label>歌單（${songs.length} 首）</label>
-      ${songs.map(s => `<div class="songrow"><span>${esc(s.name)} <small>${esc(s.status || '還沒練')}</small></span><button aria-label="移除" onclick="removeSong('${s.id}','${id}')">×</button></div>`).join('') || '<p class="empty">歌單還沒出來</p>'}
+      ${songs.map(s => `<div class="songrow"><span>${esc(s.name)} <small>${esc(s.status || '未抓歌')}</small></span><button aria-label="移除" onclick="removeSong('${s.id}','${id}')">×</button></div>`).join('') || '<p class="empty">歌單還沒出來</p>'}
       <div class="addsong"><input id="sNew" placeholder="輸入歌名"><button onclick="addSong('${id}')">加入</button></div></div>` : ''}
     <button class="primary" id="btnGig">${id ? '儲存演出' : '新增演出'}</button>
     ${id ? '<button class="ghost danger" id="btnGigDel">刪除這場演出</button>' : ''}
@@ -767,7 +771,7 @@ async function addSong(gigId) {
   try {
     await notion('pages', 'POST', { parent: { database_id: CONFIG.DB.songs }, properties: {
       '歌名': { title: [{ text: { content: name } }] }, '演出': { relation: [{ id: gigId }] },
-      '狀態': { select: { name: '還沒練' } }, '團': { select: { name: g?.band || '其他' } } } });
+      '狀態': { select: { name: '未抓歌' } }, '團': { select: { name: g?.band || '其他' } } } });
     await load(true); openGig(gigId); document.getElementById('sNew')?.focus();
   } catch (e) { el.disabled = false; toast('沒有存到：' + e.message); }
 }
@@ -884,6 +888,7 @@ function openLogEdit(id) {
 
 /* ---------- 版本紀錄 ---------- */
 const VERSIONS = [
+  ['1.7', '10/26', ['歌曲新增「未抓歌」狀態，新加的歌預設為未抓歌', '編輯項目改成右上角的編輯圖示', '開啟課程、參考影片改成右上角的影片圖示']],
   ['1.6', '10/26', ['成長追蹤新增週、月、年報表', '習慣月曆：整體與每個項目', '完成率、最佳連續、全部完成天數、平均每天', '依領域篩選']],
   ['1.5', '10/26', ['新增「紀錄」分頁：每日練習紀錄、打卡紀錄', '打卡可以補登、修改、刪除', '練習紀錄可以修改、刪除', '設定裡新增版本紀錄']],
   ['1.4', '10/26', ['首頁打卡卡片，支援 iPhone 捷徑自動打卡', '新增、編輯演出，直接管理歌單', '回到 app 自動更新，拿掉重新整理按鈕', '倒數方框縮小', '加入主畫面後像 app 一樣全螢幕使用']],
@@ -960,6 +965,9 @@ async function deleteItem(id) {
 }
 
 /* ---------- 底部面板 ---------- */
+const PENCIL = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const PLAY = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M10 9.2v5.6l4.8-2.8Z" fill="currentColor"/></svg>';
+const sheetHead = (title, id) => `<div class="shead"><h3>${esc(title)}</h3><span class="sbtns"><span id="lk"></span><button class="iconbtn" aria-label="編輯項目" onclick="openEdit('${id}')">${PENCIL}</button></span></div>`;
 const sheet = document.getElementById('sheet'), scrim = document.getElementById('scrim');
 function openSheet(html) { sheet.innerHTML = html; sheet.scrollTop = 0; scrim.classList.add('open'); sheet.classList.add('open'); }
 function closeSheet() { scrim.classList.remove('open'); sheet.classList.remove('open'); }
@@ -983,10 +991,8 @@ async function openLog(id) {
   const it = S.items.find(i => i.id === id);
   const course = isCourse(it), drum = it.domain === '爵士鼓' && !course;
   const progVal = course ? (it.prog || 0) + (doneToday(id) ? 0 : 1) : it.prog;
-  openSheet(`<h3>${esc(it.name)}</h3>
+  openSheet(`${sheetHead(it.name, it.id)}
     <p class="hint">${course ? '上完一堂就記下來' : drum ? '填今天能乾淨打到的速度' : '記下今天的進度'}</p>
-    <div id="lk"></div>
-    <button class="textbtn" onclick="openEdit('${it.id}')">編輯這個項目</button>
     ${course || it.unit ? `<div class="field"><label>${course ? '上到第幾堂' : `練到第幾${esc(it.unit)}`}</label>${stepper('fProg', progVal, 1)}</div>` : ''}
     ${drum ? `<div class="field"><label>BPM${it.bpm != null ? `（目前最高 ${it.bpm}）` : ''}</label>${stepper('fBpm', it.bpm, 5)}</div>` : ''}
     <div class="field"><label>備註</label><textarea id="fNote" rows="2" placeholder="哪裡卡住、下次要注意什麼"></textarea></div>
@@ -994,7 +1000,7 @@ async function openLog(id) {
     <button class="ghost" onclick="closeSheet()">取消</button>`);
   document.getElementById('btnSave').onclick = () => saveLog(it, drum);
   const href = await linkFromPage(it), lk = document.getElementById('lk');
-  if (href && lk) lk.innerHTML = `<a class="link" href="${esc(href)}" target="_blank" rel="noopener">${course ? '開啟課程' : '開啟參考資料'}</a>`;
+  if (href && lk) lk.innerHTML = `<a class="iconbtn" href="${esc(href)}" target="_blank" rel="noopener" aria-label="${course ? '開啟課程' : '開啟參考影片'}" style="color:var(--water)">${PLAY}</a>`;
 }
 
 async function saveLog(it, drum) {
@@ -1023,8 +1029,8 @@ async function saveLog(it, drum) {
 }
 
 function openSong(id) {
-  const s = S.songs.find(x => x.id === id), opts = ['還沒練', '不穩', '可以上台'];
-  openSheet(`<h3>${esc(s.name)}</h3><p class="hint">練完之後，這首現在的狀態是？</p>
+  const s = S.songs.find(x => x.id === id), opts = ['未抓歌', '還沒練', '不穩', '可以上台'];
+  openSheet(`<h3>${esc(s.name)}</h3><p class="hint">這首現在的狀態是？</p>
     <div class="choices">${opts.map(o => `<button class="choice ${s.status === o ? 'on' : ''}" data-v="${o}">${o}</button>`).join('')}</div>
     <button class="primary" id="btnSong">記錄完成</button><button class="ghost" onclick="closeSheet()">取消</button>`);
   let pick = s.status || '不穩';
