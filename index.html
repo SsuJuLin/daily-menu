@@ -120,6 +120,8 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
 .pick span{color:var(--muted);font-size:13px}
 .group{font-size:13px;color:var(--muted);margin:16px 0 2px}
 
+.toast button{margin-left:12px;border:0;background:none;color:var(--lily);font-weight:700;font-size:15px;cursor:pointer;padding:0}
+.toast.show{pointer-events:auto}
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:11px 18px;border-radius:999px;font-size:15px;z-index:30;opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.show{opacity:1}
 .notice{background:var(--surface);border-radius:16px;padding:18px;margin-top:24px}
@@ -501,37 +503,21 @@ function renderToday() {
   html += `<div class="chips menuchips">${chips.map(c => `<button class="chip ${menuFilter === c ? 'on' : ''}" onclick="menuFilter='${c}';render()">${c}</button>`).join('')}</div>`;
   const show = c => menuFilter === '全部' || menuFilter === c;
 
-  const doneRows = [];
   if (show('網課') && courses.length) {
-    const left = courses.filter(c => !doneToday(c.id)).sort((a, b) => courseDue(b) - courseDue(a));
-    courses.filter(c => doneToday(c.id)).forEach(c => doneRows.push(courseRow(c)));
-    if (left.length) html += section('網課', `${dueCourses.filter(c => !doneToday(c.id)).length} 門${isToday ? '今天' : '這天'}要上`, left.map(courseRow).join(''));
+    const sorted = [...courses].sort((a, b) => (courseDue(b) || doneToday(b.id)) - (courseDue(a) || doneToday(a.id)));
+    html += section('網課', `${dueCourses.filter(c => !doneToday(c.id)).length} 門${isToday ? '今天' : '這天'}要上`, sorted.map(courseRow).join(''));
   }
   if (show('爵士鼓')) {
     const cats = [...new Set(drum.map(i => i.cat || '其他'))].sort((a, b) => (CAT_ORDER.indexOf(a) + 99) % 99 - (CAT_ORDER.indexOf(b) + 99) % 99);
-    cats.forEach(c => {
-      const list = drum.filter(i => (i.cat || '其他') === c);
-      list.filter(i => doneToday(i.id)).forEach(i => doneRows.push(itemRow(i)));
-      const left = list.filter(i => !doneToday(i.id));
-      if (left.length) html += section(c, '爵士鼓', left.map(itemRow).join(''));
-    });
+    cats.forEach(c => html += section(c, '爵士鼓', drum.filter(i => (i.cat || '其他') === c).map(itemRow).join('')));
   }
-  [...new Set(others.map(i => i.domain || '其他'))].filter(show).forEach(d => {
-    const list = others.filter(i => (i.domain || '其他') === d);
-    list.filter(i => doneToday(i.id)).forEach(i => doneRows.push(itemRow(i)));
-    const left = list.filter(i => !doneToday(i.id));
-    if (left.length) html += section(d, '', left.map(itemRow).join(''));
-  });
+  [...new Set(others.map(i => i.domain || '其他'))].filter(show).forEach(d =>
+    html += section(d, '', others.filter(i => (i.domain || '其他') === d).map(itemRow).join('')));
   if (show('歌曲')) S.gigs.forEach(g => {
     const list = songsAll.filter(s => s.gig === g.id);
-    list.filter(s => S.songsDone.has(s.id)).forEach(s => doneRows.push(songRow(s)));
-    const left = list.filter(s => !S.songsDone.has(s.id));
-    if (left.length) html += section(g.name, `${md(g.date)} 演出歌曲`, left.map(songRow).join(''));
+    if (list.length) html += section(g.name, `${md(g.date)} 演出歌曲`, list.map(songRow).join(''));
   });
   if (!total && !courses.length) html += `<p class="empty">還沒有項目，新增一個開始練習。</p>`;
-  if (doneRows.length) html += `<section class="donebox"><button class="donehead" onclick="doneOpen=!doneOpen;render()">
-      <span>${isToday ? '今天' : '這天'}已完成 ${doneRows.length} 項</span><span class="caret ${doneOpen ? 'up' : ''}">⌄</span></button>
-      ${doneOpen ? doneRows.join('') : ''}</section>`;
   html += `<button class="more" onclick="openEdit()">＋ 新增練習項目</button>`;
   main.innerHTML = html;
 }
@@ -974,6 +960,7 @@ function openLogEdit(id) {
 
 /* ---------- 版本紀錄 ---------- */
 const VERSIONS = [
+  ['1.9', '10/27', ['完成的項目留在原位，不再移到最下面', '點已完成的項目可以「取消完成」，BPM 和進度會恢復', '記錄後提示列有「復原」按鈕']],
   ['1.8', '10/26', ['鼓面、本月累積天數、打卡框排成一列', '日期列移到鼓面下方', '首頁加上一週日期列，可以點前幾天補記', '首頁加上分類篩選標籤', '完成的項目移到最下面「今天已完成」，預設收合']],
   ['1.7', '10/26', ['歌曲新增「未抓歌」狀態，新加的歌預設為未抓歌', '編輯項目改成右上角的編輯圖示', '開啟課程、參考影片改成右上角的影片圖示']],
   ['1.6', '10/26', ['成長追蹤新增週、月、年報表', '習慣月曆：整體與每個項目', '完成率、最佳連續、全部完成天數、平均每天', '依領域篩選']],
@@ -1083,9 +1070,11 @@ async function openLog(id) {
     ${course || it.unit ? `<div class="field"><label>${course ? '上到第幾堂' : `練到第幾${esc(it.unit)}`}</label>${stepper('fProg', progVal, 1)}</div>` : ''}
     ${drum ? `<div class="field"><label>BPM${it.bpm != null ? `（目前最高 ${it.bpm}）` : ''}</label>${stepper('fBpm', it.bpm, 5)}</div>` : ''}
     <div class="field"><label>備註</label><textarea id="fNote" rows="2" placeholder="哪裡卡住、下次要注意什麼"></textarea></div>
-    <button class="primary" id="btnSave">記錄完成</button>
+    <button class="primary" id="btnSave">${doneToday(id) ? '再記一筆' : '記錄完成'}</button>
+    ${doneToday(id) ? `<button class="ghost danger" id="btnUndo">取消完成</button>` : ''}
     <button class="ghost" onclick="closeSheet()">取消</button>`);
   document.getElementById('btnSave').onclick = () => saveLog(it, drum);
+  if (doneToday(id)) document.getElementById('btnUndo').onclick = () => undoDone(it);
   const href = await linkFromPage(it), lk = document.getElementById('lk');
   if (href && lk) lk.innerHTML = `<a class="iconbtn" href="${esc(href)}" target="_blank" rel="noopener" aria-label="${course ? '開啟課程' : '開啟參考影片'}" style="color:var(--water)">${PLAY}</a>`;
 }
@@ -1106,12 +1095,13 @@ async function saveLog(it, drum) {
   try {
     const pg = await notion('pages', 'POST', { parent: { database_id: CONFIG.DB.logs }, properties: props });
     const upd = {}; let record = false;
+    localStorage.setItem('dailyMenu.prev.' + nid(pg.id), JSON.stringify({ bpm: it.bpm, prog: it.prog }));
     if (bpm != null && (it.bpm == null || bpm > it.bpm)) { upd['目前BPM'] = { number: bpm }; record = it.bpm != null; it.bpm = bpm; }
     if (prog != null && (it.prog == null || prog > it.prog)) { upd['目前進度'] = { number: prog }; it.prog = prog; }
     if (Object.keys(upd).length) await notion(`pages/${it.id}`, 'PATCH', { properties: upd });
     S.logs.push({ id: nid(pg.id), item: it.id, date: VIEW, bpm, prog, note });
     closeSheet(); render();
-    toast(record ? `新紀錄！${it.short || it.name} ${bpm} BPM` : '已記錄');
+    toast(record ? `新紀錄！${it.short || it.name} ${bpm} BPM` : '已記錄', () => undoDone(it));
   } catch (e) { btn.disabled = false; btn.textContent = '記錄完成'; toast('沒有存到：' + e.message); }
 }
 
@@ -1119,7 +1109,13 @@ function openSong(id) {
   const s = S.songs.find(x => x.id === id), opts = ['未抓歌', '還沒練', '不穩', '可以上台'];
   openSheet(`<h3>${esc(s.name)}</h3><p class="hint">這首現在的狀態是？</p>
     <div class="choices">${opts.map(o => `<button class="choice ${s.status === o ? 'on' : ''}" data-v="${o}">${o}</button>`).join('')}</div>
-    <button class="primary" id="btnSong">記錄完成</button><button class="ghost" onclick="closeSheet()">取消</button>`);
+    <button class="primary" id="btnSong">記錄完成</button>
+    ${S.songsDone.has(s.id) ? '<button class="ghost danger" id="btnSongUndo">取消完成</button>' : ''}
+    <button class="ghost" onclick="closeSheet()">取消</button>`);
+  if (S.songsDone.has(s.id)) document.getElementById('btnSongUndo').onclick = () => {
+    S.songsDone.delete(s.id); localStorage.setItem('dailyMenu.songsDone.' + VIEW, JSON.stringify([...S.songsDone]));
+    closeSheet(); render(); toast('已恢復成未完成');
+  };
   let pick = s.status || '不穩';
   sheet.querySelectorAll('.choice').forEach(b => b.onclick = () => { pick = b.dataset.v; sheet.querySelectorAll('.choice').forEach(x => x.classList.toggle('on', x === b)); });
   document.getElementById('btnSong').onclick = async () => {
@@ -1147,7 +1143,28 @@ function renderSetup() {
   main.innerHTML = `<div class="notice"><p><b>先連上 Notion</b></p><p>貼上「爵士鼓教學系統」integration 的 token，就會讀取今天的菜單。</p>
     <button class="primary" onclick="openSettings()">輸入 token</button></div>`;
 }
-let tt; function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 2400); }
+async function undoDone(it) {
+  const mine = S.logs.filter(l => l.item === it.id && l.date === VIEW);
+  if (!mine.length) return;
+  try {
+    // 從最新一筆往回刪，並把目前 BPM／進度恢復成記錄前的數字
+    let restore = null;
+    for (const l of [...mine].reverse()) {
+      await notion(`pages/${l.id}`, 'PATCH', { archived: true });
+      const prev = JSON.parse(localStorage.getItem('dailyMenu.prev.' + l.id) || 'null');
+      if (prev) restore = prev;
+      localStorage.removeItem('dailyMenu.prev.' + l.id);
+    }
+    S.logs = S.logs.filter(l => !mine.includes(l));
+    if (restore && (restore.bpm !== it.bpm || restore.prog !== it.prog)) {
+      await notion(`pages/${it.id}`, 'PATCH', { properties: { '目前BPM': { number: restore.bpm ?? null }, '目前進度': { number: restore.prog ?? null } } });
+      it.bpm = restore.bpm ?? null; it.prog = restore.prog ?? null;
+    }
+    closeSheet(); render(); toast('已恢復成未完成');
+  } catch (e) { toast('沒有恢復：' + e.message); }
+}
+let tt; function toast(m, undo) { const t = document.getElementById('toast'); t.textContent = m;
+  if (undo) { const b = document.createElement('button'); b.textContent = '復原'; b.onclick = () => { t.classList.remove('show'); undo(); }; t.appendChild(b); } t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), undo ? 5000 : 2400); }
 
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => {
   view = b.dataset.v; document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === b));
