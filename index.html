@@ -144,6 +144,12 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
 .hist{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px;margin-bottom:16px}
 .hist .d{color:var(--muted);font-variant-numeric:tabular-nums}
 .danger{color:var(--lotus)}
+.stats .punch{flex-direction:column;align-items:stretch;gap:10px;margin-top:2px;padding:12px}
+.stats .punch .pt b{font-size:15px}
+.stats .punch .pt span{font-size:12px;display:block;line-height:1.4}
+.stats .punch button{padding:10px 12px;width:100%}
+.head{align-items:start}
+.head .drum{margin-top:4px}
 .week{display:grid;grid-template-columns:22px repeat(7,1fr) 22px;gap:4px;align-items:center;margin-top:18px}
 .wnav{background:none;border:0;font-size:22px;color:var(--muted);cursor:pointer;padding:0}
 .wnav:disabled{opacity:.25}
@@ -459,16 +465,16 @@ function renderToday() {
   const total = counted.length + songsAll.length;
   const done = counted.filter(i => doneToday(i.id)).length + songsAll.filter(s => S.songsDone.has(s.id)).length;
 
-  let html = weekStrip();
-  if (!isToday) html += `<div class="backfill"><span>正在看 ${md(VIEW)} 星期${'日一二三四五六'[new Date(VIEW + 'T00:00:00').getDay()]}，記錄會存到這一天</span><button onclick="setView(TODAY)">回到今天</button></div>`;
+  let html = '';
+  const backfill = isToday ? '' : `<div class="backfill"><span>正在看 ${md(VIEW)} 星期${'日一二三四五六'[new Date(VIEW + 'T00:00:00').getDay()]}，記錄會存到這一天</span><button onclick="setView(TODAY)">回到今天</button></div>`;
   html += `<div class="head">
     <div class="drum">${drumSVG(done, total)}
       <div class="center"><div><div class="count">${done}/${total}</div><div class="countsub">${total && done === total ? '全部完成' : '已完成'}</div></div></div></div>
     <div class="stats">
       <div class="stat"><b>${monthDays()} 天</b>${new Date(TODAY + 'T00:00:00').getMonth() + 1} 月有練習</div>
-    </div></div>`;
+      ${isToday ? punchCard() : ''}
+    </div></div>` + weekStrip() + backfill;
   if (isToday) {
-    html += punchCard();
     html += `<div class="gigs">${S.gigs.map(g => {
       const n = daysBetween(TODAY, g.date), all = S.songs.filter(s => s.gig === g.id);
       const pending = all.filter(s => s.status !== '可以上台').length;
@@ -963,7 +969,7 @@ function openLogEdit(id) {
 
 /* ---------- 版本紀錄 ---------- */
 const VERSIONS = [
-  ['1.8', '10/26', ['首頁加上一週日期列，可以點前幾天補記', '首頁加上分類篩選標籤', '完成的項目移到最下面「今天已完成」，預設收合']],
+  ['1.8', '10/26', ['打卡框移到鼓面右邊', '日期列移到鼓面下方', '首頁加上一週日期列，可以點前幾天補記', '首頁加上分類篩選標籤', '完成的項目移到最下面「今天已完成」，預設收合']],
   ['1.7', '10/26', ['歌曲新增「未抓歌」狀態，新加的歌預設為未抓歌', '編輯項目改成右上角的編輯圖示', '開啟課程、參考影片改成右上角的影片圖示']],
   ['1.6', '10/26', ['成長追蹤新增週、月、年報表', '習慣月曆：整體與每個項目', '完成率、最佳連續、全部完成天數、平均每天', '依領域篩選']],
   ['1.5', '10/26', ['新增「紀錄」分頁：每日練習紀錄、打卡紀錄', '打卡可以補登、修改、刪除', '練習紀錄可以修改、刪除', '設定裡新增版本紀錄']],
