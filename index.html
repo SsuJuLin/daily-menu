@@ -66,12 +66,14 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 @media (prefers-reduced-motion:reduce){.drum circle.arc{transition:none}}
 
 /* gig countdown */
-.gigs{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;margin:22px 0 4px}
-.gig{min-height:118px;border:1.5px solid var(--line);border-radius:18px;padding:10px 8px;cursor:pointer;color:inherit;font:inherit;width:100%;gap:4px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;text-align:center;background:var(--surface)}
-.gig .gname{font-weight:700;font-size:13px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.gig .gnum{font-family:"Noto Serif TC",serif;font-weight:900;font-size:34px;line-height:1;color:var(--amber);font-variant-numeric:tabular-nums}
+.gigs{display:flex;gap:10px;margin:22px -18px 4px;padding:0 18px 4px;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity;scroll-padding-left:18px}
+.gigs::-webkit-scrollbar{display:none}
+.gigs .gig{flex:0 0 126px;scroll-snap-align:start}
+.gig{min-height:0;border:1.5px solid var(--line);border-radius:18px;padding:9px 8px 10px;cursor:pointer;color:inherit;font:inherit;width:100%;gap:3px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;text-align:center;background:var(--surface)}
+.gig .gname{font-weight:700;font-size:13px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.gig .gnum{font-family:"Noto Serif TC",serif;font-weight:900;font-size:30px;line-height:1.05;color:var(--amber);font-variant-numeric:tabular-nums}
 .gig .gnum small{font-size:13px;font-weight:700;margin-left:2px;color:var(--ink)}
-.gig .ginfo{font-size:11px;color:var(--muted);line-height:1.4}
+.gig .ginfo{font-size:11px;white-space:nowrap;color:var(--muted);line-height:1.4}
 
 /* sections */
 section{margin-top:30px}
@@ -144,15 +146,15 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
 .hist{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px;margin-bottom:16px}
 .hist .d{color:var(--muted);font-variant-numeric:tabular-nums}
 .danger{color:var(--lotus)}
-.head{grid-template-columns:150px auto minmax(0,112px);gap:12px;align-items:center;justify-content:space-between}
+.head{grid-template-columns:150px auto minmax(0,128px);gap:10px;align-items:center;justify-content:space-between}
 .mstat{text-align:center;white-space:nowrap}
 .mstat b{display:block;font-family:"Noto Serif TC",serif;font-weight:900;font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}
 .mstat b small{font-family:"Noto Sans TC",sans-serif;font-size:13px;font-weight:700;margin-left:2px}
 .mstat span{font-size:12px;color:var(--muted)}
-.head .punch{flex-direction:column;align-items:stretch;gap:7px;margin:0;padding:10px 9px;border-radius:14px}
-.head .punch .pt b{font-size:14px}
-.head .punch .pt span{font-size:10px;display:block;line-height:1.35;white-space:nowrap;letter-spacing:-.02em}
-.head .punch button{padding:8px 6px;width:100%;font-size:14px;border-radius:10px}
+.head .punch{flex-direction:column;align-items:stretch;gap:9px;margin:0;padding:13px 11px;border-radius:16px}
+.head .punch .pt b{font-size:16px}
+.head .punch .pt span{font-size:11px;display:block;line-height:1.35;white-space:nowrap;letter-spacing:-.02em}
+.head .punch button{padding:10px 6px;width:100%;font-size:15px;border-radius:12px}
 .week{display:grid;grid-template-columns:22px repeat(7,1fr) 22px;gap:4px;align-items:center;margin-top:18px}
 .wnav{background:none;border:0;font-size:22px;color:var(--muted);cursor:pointer;padding:0}
 .wnav:disabled{opacity:.25}
@@ -229,7 +231,7 @@ a.iconbtn{text-decoration:none}
 .ver b{font-size:15px}
 .ver span{font-size:13px;color:var(--muted);margin-left:8px}
 .ver ul{margin:4px 0 0;padding-left:18px;font-size:14px}
-.gig.add{border-style:dashed;background:none;justify-content:center;color:var(--muted);font-size:14px}
+.gig.add{min-height:76px;border-style:dashed;background:none;justify-content:center;color:var(--muted);font-size:14px}
 .punch{display:flex;align-items:center;gap:14px;background:var(--surface);border-radius:18px;padding:14px 16px;margin-top:18px}
 .punch .pt{flex:1;min-width:0}
 .punch .pt b{display:block;font-size:17px}
@@ -482,7 +484,7 @@ function renderToday() {
       const pending = all.filter(s => s.status !== '可以上台').length;
       return `<button class="gig" onclick="openGig('${g.id}')"><div class="gname">${esc(g.name)}</div>
         <div class="gnum">${n === 0 ? '今天' : n}${n === 0 ? '' : '<small>天</small>'}</div>
-        <div class="ginfo">${md(g.date)}${g.place ? '，' + esc(g.place) : ''}<br>${!all.length ? '歌單還沒出來' : pending ? pending + ' 首還沒準備好' : '歌曲都準備好了'}</div></button>`;
+        <div class="ginfo">${md(g.date)}，${!all.length ? '歌單未出' : pending ? pending + ' 首未完成' : '全部完成'}</div></button>`;
     }).join('')}<button class="gig add" onclick="openGig()">＋ 新增演出</button></div>`;
   }
 
