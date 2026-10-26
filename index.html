@@ -144,17 +144,15 @@ section h2 small{font-family:"Noto Sans TC",sans-serif;font-weight:400;font-size
 .hist{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px;margin-bottom:16px}
 .hist .d{color:var(--muted);font-variant-numeric:tabular-nums}
 .danger{color:var(--lotus)}
-.head{grid-template-columns:118px auto 1fr;gap:14px;align-items:center}
-.head .drum{width:118px;height:118px}
-.head .drum .count{font-size:30px}
+.head{grid-template-columns:150px auto minmax(0,112px);gap:12px;align-items:center;justify-content:space-between}
 .mstat{text-align:center;white-space:nowrap}
 .mstat b{display:block;font-family:"Noto Serif TC",serif;font-weight:900;font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}
 .mstat b small{font-family:"Noto Sans TC",sans-serif;font-size:13px;font-weight:700;margin-left:2px}
 .mstat span{font-size:12px;color:var(--muted)}
-.head .punch{flex-direction:column;align-items:stretch;gap:10px;margin:0;padding:14px 12px;min-height:118px;justify-content:space-between}
-.head .punch .pt b{font-size:16px}
-.head .punch .pt span{font-size:12px;display:block;line-height:1.4}
-.head .punch button{padding:11px 10px;width:100%}
+.head .punch{flex-direction:column;align-items:stretch;gap:7px;margin:0;padding:10px 9px;border-radius:14px}
+.head .punch .pt b{font-size:14px}
+.head .punch .pt span{font-size:10px;display:block;line-height:1.35;white-space:nowrap;letter-spacing:-.02em}
+.head .punch button{padding:8px 6px;width:100%;font-size:14px;border-radius:10px}
 .week{display:grid;grid-template-columns:22px repeat(7,1fr) 22px;gap:4px;align-items:center;margin-top:18px}
 .wnav{background:none;border:0;font-size:22px;color:var(--muted);cursor:pointer;padding:0}
 .wnav:disabled{opacity:.25}
