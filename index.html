@@ -539,7 +539,7 @@ function itemRow(it) {
   const d = doneToday(it.id), [age, stale] = ageText(it.id);
   const parts = [];
   if (it.unit && it.prog != null) parts.push(`第 ${it.prog} ${it.unit}`);
-  if (it.bpm != null) parts.push(`最高 ${it.bpm} BPM`);
+  if (it.bpm != null) parts.push(`目前 ${it.bpm} BPM`);
   return `<button class="row ${d ? 'done' : ''}" style="--c:${colorOf(it)}" onclick="openLog('${it.id}')">
     <span class="tick">${d ? '✓' : ''}</span>
     <span class="meta"><span class="name">${it.short ? `<span class="short">${esc(it.short)}</span>` : ''}${esc(it.name)}</span>${parts.length ? `<span class="sub">${parts.join('　')}</span>` : ''}</span>
@@ -960,6 +960,7 @@ function openLogEdit(id) {
 
 /* ---------- 版本紀錄 ---------- */
 const VERSIONS = [
+  ['1.11', '10/27', ['「最高 BPM」改成「目前 BPM」', '目前 BPM 和進度改成跟著最新一次的記錄更新，不再只記最高值']],
   ['1.10', '10/27', ['新增「健身」領域：重訓、核心、跑步']],
   ['1.9', '10/27', ['完成的項目留在原位，不再移到最下面', '點已完成的項目可以「取消完成」，BPM 和進度會恢復', '記錄後提示列有「復原」按鈕']],
   ['1.8', '10/26', ['鼓面、本月累積天數、打卡框排成一列', '日期列移到鼓面下方', '首頁加上一週日期列，可以點前幾天補記', '首頁加上分類篩選標籤', '完成的項目移到最下面「今天已完成」，預設收合']],
@@ -1069,7 +1070,7 @@ async function openLog(id) {
   openSheet(`${sheetHead(it.name, it.id)}
     <p class="hint">${course ? '上完一堂就記下來' : drum ? '填今天能乾淨打到的速度' : '記下今天的進度'}</p>
     ${course || it.unit ? `<div class="field"><label>${course ? '上到第幾堂' : `練到第幾${esc(it.unit)}`}</label>${stepper('fProg', progVal, 1)}</div>` : ''}
-    ${drum ? `<div class="field"><label>BPM${it.bpm != null ? `（目前最高 ${it.bpm}）` : ''}</label>${stepper('fBpm', it.bpm, 5)}</div>` : ''}
+    ${drum ? `<div class="field"><label>BPM${it.bpm != null ? `（目前 ${it.bpm}）` : ''}</label>${stepper('fBpm', it.bpm, 5)}</div>` : ''}
     <div class="field"><label>備註</label><textarea id="fNote" rows="2" placeholder="哪裡卡住、下次要注意什麼"></textarea></div>
     <button class="primary" id="btnSave">${doneToday(id) ? '再記一筆' : '記錄完成'}</button>
     ${doneToday(id) ? `<button class="ghost danger" id="btnUndo">取消完成</button>` : ''}
@@ -1097,12 +1098,12 @@ async function saveLog(it, drum) {
     const pg = await notion('pages', 'POST', { parent: { database_id: CONFIG.DB.logs }, properties: props });
     const upd = {}; let record = false;
     localStorage.setItem('dailyMenu.prev.' + nid(pg.id), JSON.stringify({ bpm: it.bpm, prog: it.prog }));
-    if (bpm != null && (it.bpm == null || bpm > it.bpm)) { upd['目前BPM'] = { number: bpm }; record = it.bpm != null; it.bpm = bpm; }
-    if (prog != null && (it.prog == null || prog > it.prog)) { upd['目前進度'] = { number: prog }; it.prog = prog; }
+    if (bpm != null && bpm !== it.bpm) { upd['目前BPM'] = { number: bpm }; record = it.bpm != null && bpm > it.bpm; it.bpm = bpm; }
+    if (prog != null && prog !== it.prog) { upd['目前進度'] = { number: prog }; it.prog = prog; }
     if (Object.keys(upd).length) await notion(`pages/${it.id}`, 'PATCH', { properties: upd });
     S.logs.push({ id: nid(pg.id), item: it.id, date: VIEW, bpm, prog, note });
     closeSheet(); render();
-    toast(record ? `新紀錄！${it.short || it.name} ${bpm} BPM` : '已記錄', () => undoDone(it));
+    toast(record ? `進步了！${it.short || it.name} ${bpm} BPM` : '已記錄', () => undoDone(it));
   } catch (e) { btn.disabled = false; btn.textContent = '記錄完成'; toast('沒有存到：' + e.message); }
 }
 
